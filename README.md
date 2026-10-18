@@ -1,36 +1,165 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CMIRS — Campus Maintenance & Incident Reporting System
 
-## Getting Started
+CMIRS is a web-based application designed to help students and school personnel report campus maintenance problems and safety hazards. Maintenance coordinators and administrators can manage, assign, track, and verify repairs through a structured workflow.
 
-First, run the development server:
+> **Development Status:** Phase 0 — Project documentation and architecture definition. No application features, authentication, database tables, or dashboards have been implemented. The project currently contains a default Next.js starter scaffold.
+
+## Table of Contents
+
+- [Project Purpose](#project-purpose)
+- [Technology Stack](#technology-stack)
+- [User Roles](#user-roles)
+- [Report Lifecycle](#report-lifecycle)
+- [Prerequisites](#prerequisites)
+- [Local Setup](#local-setup)
+- [Environment Configuration](#environment-configuration)
+- [Available Scripts](#available-scripts)
+- [Project Documentation](#project-documentation)
+- [Repository and Infrastructure](#repository-and-infrastructure)
+- [Confirmed Decisions](#confirmed-decisions)
+
+## Project Purpose
+
+CMIRS enables campus communities to:
+
+- **Report** maintenance issues and safety hazards with optional photo evidence.
+- **Triage** incoming reports by assigning priority and coordinating responses.
+- **Track** repair assignments, work progress, and status changes.
+- **Verify** completed repairs before closing reports.
+- **Audit** the full history of each report for accountability.
+
+## Technology Stack
+
+| Component | Technology | Version |
+|---|---|---|
+| Framework | Next.js (App Router) | 16.4.2 |
+| Language | TypeScript | 5.9.3 |
+| UI Library | React | 19.3.0 |
+| Styling | Tailwind CSS (with Turbopack) | 4.x |
+| Backend / Database | Supabase (PostgreSQL, Auth, Storage) | *Not yet integrated* |
+| Runtime | Node.js | 24.22.0 |
+| Package Manager | npm | 11.19.1 |
+| Linting | ESLint | 9.x |
+| Deployment Target | Vercel | *Not yet configured* |
+
+## User Roles
+
+CMIRS defines five user roles. See [docs/ROLES.md](docs/ROLES.md) for full details and the role-permission matrix.
+
+| Role | Summary |
+|---|---|
+| Student / School Personnel | Submit and track maintenance reports |
+| Maintenance Coordinator | Review reports, assign technicians, verify completed repairs |
+| Maintenance Technician | Inspect and perform assigned repairs |
+| School Administrator | Manage user accounts and role assignments |
+| School Management | View reports and analytics for oversight |
+
+New users receive a safe default role after registration. A School Administrator assigns or changes their actual role (D1).
+
+## Report Lifecycle
+
+The high-level maintenance report workflow:
+
+1. A reporter **submits** a report describing the issue (with optional photos and an urgent-hazard flag).
+2. A Maintenance Coordinator **reviews** the report and confirms or adjusts its priority.
+3. The Coordinator **assigns** the report to a Maintenance Technician.
+4. The Technician **inspects and repairs** the issue, logging work progress.
+5. The Technician marks the report as **completed**.
+6. A Maintenance Coordinator **verifies** the repair (D2).
+7. The report is **resolved** (or reopened if verification fails).
+
+See [docs/WORKFLOW.md](docs/WORKFLOW.md) for the complete lifecycle, status definitions, transition rules, and Mermaid diagram.
+
+## Prerequisites
+
+- **Node.js** >= 24.x
+- **npm** >= 11.x
+- **Git**
+
+Supabase CLI and a configured Supabase project will be required for backend development in a later phase.
+
+## Local Setup
 
 ```bash
+# Clone the repository (remote not yet configured — see Repository section below)
+git clone https://github.com/johannfranzero/CMIRS-System.git
+cd CMIRS-System/my-app
+
+# Install dependencies
+npm install
+
+# Copy the environment template and fill in your values
+cp .env.example .env.local
+
+# Start the development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to view the application.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> **Note:** The application currently displays the default Next.js starter page. Supabase environment variables are defined in `.env.example` but are not yet consumed by any application code.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment Configuration
 
-## Learn More
+Copy `.env.example` to `.env.local` and provide your Supabase project credentials:
 
-To learn more about Next.js, take a look at the following resources:
+```
+NEXT_PUBLIC_SUPABASE_URL=https://xyirfifvcntuzceivtho.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Never commit `.env.local`** or any file containing real credentials. The `.gitignore` already excludes `.env*` files.
+- See [docs/SECURITY.md](docs/SECURITY.md) for environment variable handling guidelines.
+- See [.env.example](.env.example) for the full list of variables and their descriptions.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Available Scripts
 
-## Deploy on Vercel
+These commands are defined in `package.json` and verified against the current project:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Command | Description |
+|---|---|
+| `npm run dev` | Start the Next.js development server (Turbopack) |
+| `npm run build` | Create an optimized production build |
+| `npm run start` | Serve the production build locally |
+| `npm run lint` | Run ESLint on the project |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Project Documentation
+
+| Document | Description |
+|---|---|
+| [docs/ROLES.md](docs/ROLES.md) | User roles, permissions, and role-permission matrix |
+| [docs/WORKFLOW.md](docs/WORKFLOW.md) | Report lifecycle, status transitions, and actor permissions |
+| [docs/DATABASE.md](docs/DATABASE.md) | Proposed database schema, relationships, and integrity rules |
+| [docs/SECURITY.md](docs/SECURITY.md) | Planned security architecture and access control |
+| [.env.example](.env.example) | Environment variable template (no real credentials) |
+
+## Repository and Infrastructure
+
+| Resource | Status |
+|---|---|
+| GitHub Repository | [`johannfranzero/CMIRS-System`](https://github.com/johannfranzero/CMIRS-System) — exists but **not yet connected** as a local Git remote |
+| Local Git Branch | `master` (D8 specifies `main` as the primary branch — rename is pending) |
+| Supabase Project | Reference `xyirfifvcntuzceivtho` — exists but **not yet integrated** locally |
+| Vercel Deployment | Not yet configured |
+
+> **Pending setup tasks** (outside Phase 0 scope):
+>
+> - Configure the GitHub remote and connect the local repository.
+> - Rename the default branch from `master` to `main` per D8.
+> - Install Supabase packages (`@supabase/supabase-js`, `@supabase/ssr`) and configure the client.
+> - Set up Vercel deployment.
+
+## Confirmed Decisions
+
+These decisions are treated as requirements throughout all project documentation:
+
+| ID | Decision |
+|---|---|
+| D1 | New users receive a safe default role. A School Administrator assigns or changes roles after registration. |
+| D2 | A designated Maintenance Coordinator verifies completed repairs. |
+| D3 | Reporters can flag urgent hazards. Coordinators review and confirm or adjust priority. A reporter's flag does not automatically become the confirmed priority. |
+| D4 | Photo attachments are optional. A report is valid without any attachments. |
+| D5 | Supabase project exists (ref: `xyirfifvcntuzceivtho`). Its configuration and readiness must be inspected before use. |
+| D6 | GitHub repository exists. Local connection to be established when separately authorized. |
+| D7 | In-app notifications only for the MVP. Email, SMS, and push notifications are out of scope. |
+| D8 | Use `main` as the primary branch with feature branches for development. |
