@@ -17,6 +17,7 @@
 | PD-W1 | Work holds: Technician or coordinator may initiate. Reason required. Both may resume. |
 | PD-W2 | Reporter cancellation: Allowed at submitted or under_review only. Reason required. |
 | PD-W3 | Coordinator cancellation: Allowed at any non-terminal stage. Reason required. Status history preserved. |
+| PD-W4 | Assignment cancellation: APPROVED. Active assignments (assigned, in_progress, on_hold) marked cancelled atomically on report cancellation. Records preserved. Cancelled assignments block further work logging and status updates. |
 
 ---
 
@@ -116,7 +117,6 @@ is a secondary data operation covered by the coordinator's assignments UPDATE pe
 | PD-R1 | RECOMMENDED | Technician visibility scope | Technician SELECT RLS policies on 7 tables cannot be finalized |
 | PD-R2 | OPEN | Technician decline ability | assignment_status enum may need declined value |
 | PD-R6 | OPEN | Administrator/Management as reporters | reports INSERT RLS policy for these roles cannot be finalized |
-| PD-W4 | RECOMMENDED | Assignment handling on cancellation | Confirms assignments.status = cancelled on report cancellation |
 
 ### Not Blocking Migration (schema and core RLS can proceed without these)
 
@@ -139,18 +139,15 @@ is a secondary data operation covered by the coordinator's assignments UPDATE pe
 
 ## Contradictions and Ambiguities Found
 
-### 1. Cancellation reason for assignment: PD-W3 vs PD-W4 interaction
+### 1. Cancellation reason for assignment: PD-W3 and PD-W4 resolved together
 
-PD-W3 (APPROVED) requires that active assignments be notified when their report is cancelled.
-The notification implies the assignment record should reflect the cancellation (status = cancelled).
-PD-W4 (RECOMMENDED) formally confirms this but has not received owner input.
+PD-W3 (APPROVED) required that active assignments be notified when their report is cancelled.
+PD-W4 is now also APPROVED (2026-10-18): active assignments (assigned, in_progress, on_hold)
+must be marked cancelled atomically when their parent report is cancelled. Records are preserved.
 
-**Assessment:** No contradiction. PD-W3's notification requirement practically requires the
-assignment to be marked cancelled. PD-W4 is a clarifying confirmation, not a separate decision.
-The schema and RLS already accommodate assignment.status = cancelled.
-
-**Recommendation:** Close PD-W4 as "resolved by PD-W3" if the owner agrees that the assignment
-should be marked cancelled when its report is cancelled. Flagged for owner confirmation.
+**Assessment:** Resolved. No contradiction. Both decisions are consistent and complementary.
+PD-W4 explicitly confirms and extends PD-W3 with: active-status definitions, atomicity
+requirements, and the RLS guard blocking further work logging against cancelled assignments.
 
 ### 2. PD-R4 and D2 are complementary, not conflicting
 

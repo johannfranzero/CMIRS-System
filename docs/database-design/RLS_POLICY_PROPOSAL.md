@@ -1,7 +1,8 @@
 # CMIRS - RLS Policy Proposal
 
-> **Status: PROPOSAL - Updated Phase 3B (2026-10-18). Not applied to Supabase.**
-> Reflects seven owner-approved decisions. Do not apply any RLS policies until migration is authorized.
+> **Status: PROPOSAL - Updated Phase 3C (2026-10-18). Not applied to Supabase.**
+> Reflects all owner-approved decisions through Phase 3C.
+> Do not apply any RLS policies until migration is authorized.
 
 ## Table of Contents
 
@@ -9,6 +10,7 @@
 - [RLS Design Principles](#rls-design-principles)
 - [Helper Functions](#helper-functions)
 - [Phase 3B Changes to Policies](#phase-3b-changes-to-policies)
+- [Phase 3C Changes to Policies](#phase-3c-changes-to-policies)
 - [Permission Matrices](#permission-matrices)
 - [Unresolved RLS Decisions](#unresolved-rls-decisions)
 - [Security Notes and Warnings](#security-notes-and-warnings)
@@ -22,7 +24,7 @@ Policies are described in terms of access rules per operation (SELECT, INSERT, U
 and per role.
 
 These policies implement the role-permission matrix from ROLES.md and the security
-requirements from SECURITY.md, updated for Phase 3B owner decisions.
+requirements from SECURITY.md, updated for Phase 3B and 3C owner decisions.
 
 **No RLS policies have been applied. Planning only.**
 
@@ -57,20 +59,28 @@ avoid recursion in the profiles policy, with result stability (current_setting c
 ### can_view_report(report_id UUID)
 
 ```
--- Pseudocode - not yet implemented
+-- Pseudocode - updated Phase 3C for PD-R1 and PD-R2
 can_view_report(report_id UUID) -> boolean
   Returns true if:
-    - auth.uid() = reports.reporter_id, OR
-    - auth.uid() IN (SELECT technician_id FROM assignments
-                     WHERE report_id = $1 AND status != 'cancelled'), OR
+    - auth.uid() = reports.reporter_id (submitter can see own report), OR
+    - EXISTS (SELECT 1 FROM assignments
+              WHERE assignments.report_id = $1
+              AND assignments.technician_id = auth.uid()
+              AND assignments.status != 'declined')
+      (technician sees any report they have a non-declined assignment for,
+       including reassigned and cancelled records, APPROVED PD-R1), OR
     - get_user_role() IN ('coordinator', 'administrator', 'management')
+      (coordinators and oversight roles see all reports)
 ```
+
+Phase 3C change: replaced status != 'cancelled' with status != 'declined'.
+This is more permissive for cancellation history but correctly excludes declined-only
+assignment records. A technician who only declined an assignment does not see the report.
+See OD-NEW-4 for the open question on confirmed owner preference.
 
 ---
 
 ## Phase 3B Changes to Policies
-
-The following RLS policies changed as a result of Phase 3B owner decisions:
 
 ### reports - UPDATE (status to cancelled)
 
@@ -78,309 +88,373 @@ The following RLS policies changed as a result of Phase 3B owner decisions:
 
 Before: cancelled transitions actor was "Pending PD-W2/PD-W3".
 After:
-- student_personnel: may update status to cancelled ONLY when reporter_id = auth.uid()
-  AND current status IN (submitted, under_review). Reason must be provided by application.
-- coordinator: may update status to cancelled from any non-terminal status.
-  Reason required. This is already covered by the coordinator's general status UPDATE permission.
+- Reporters (student_personnel): may UPDATE own report status to cancelled ONLY at
+  submitted or under_review (APPROVED PD-W2).
+- Coordinators: may UPDATE any report status to cancelled at any non-terminal stage
+  (APPROVED PD-W3), with required reason.
+- Technicians: may UPDATE own assignment status to on_hold (active) or in_progress
+  (resume from on_hold) for their own in_progress/on_hold assignments (APPROVED PD-W1).
 
-### reports - UPDATE (status to/from on_hold)
-
-**Changed by PD-W1.**
-
-Before: on_hold actor was "Pending PD-W1".
-After:
-- Technician: may transition in_progress to on_hold for reports where they have an
-  active assignment. Reason required (application-enforced).
-- Coordinator: may transition in_progress to on_hold for any report.
-- on_hold to in_progress: same actors, no reason required.
-
-### report_status_history - INSERT
-
-**Changed by PD-W1, PD-W2, PD-W3.**
-
-Before: reporter INSERT was not described.
-After: student_personnel may INSERT into report_status_history ONLY when
-new_status = cancelled AND the parent report.status is submitted or under_review
-AND report.reporter_id = auth.uid(). changed_by must equal auth.uid().
-
-### verifications - INSERT constraints
+### verifications - INSERT
 
 **Changed by PD-R4.**
 
-Before: "PD-R4 open - whether auth.uid() can equal reports.reporter_id is not decided."
-After: auth.uid() MUST NOT equal reports.reporter_id for the report being verified.
-This constraint is APPROVED and must be enforced at the RLS policy level (not application only).
+Added fourth INSERT guard condition: verified_by must not equal reports.reporter_id.
+Combining D2 (not the performing technician) with PD-R4 (not the submitting reporter).
 
-The combined prohibition in the verifications INSERT policy:
-- verified_by = auth.uid() (always required)
-- The report must be in completed status
-- auth.uid() must NOT equal the technician_id of the active assignment for this report (D2)
-- auth.uid() must NOT equal reports.reporter_id for this report (APPROVED PD-R4)
+### assignments - UPDATE
+
+**Changed by PD-W4.**
+
+Added: once assignment.status = cancelled, no further UPDATE is permitted.
+Cancelled is a terminal status for assignment records.
+Added: cancelled assignments block work_logs INSERT.
+
+---
+
+## Phase 3C Changes to Policies
+
+### can_view_report helper
+
+**Changed by PD-R1.**
+Technician visibility predicate updated: status != 'declined' (excludes declined-only).
+Previously was status != 'cancelled' (Phase 3B draft). Corrected to match PD-R1.
+
+### report_comments - UPDATE and DELETE
+
+**Changed by PD-D3.**
+Both UPDATE and DELETE are DENY for ALL roles (comments are immutable after creation).
+Previously: UPDATE was "OWN comments (PD-D3 pending)" and DELETE was "DENY (PD-D3 pending)".
+Phase 3C: Finalized as DENY all. No role may edit or delete any comment.
+
+### report_attachments - UPDATE and DELETE
+
+**Changed by PD-D2.**
+UPDATE: DENY for ALL roles (attachments are immutable after upload).
+DELETE: coordinator-controlled deletion is approved in principle (PD-D2).
+However, the deletion audit mechanism (OD-NEW-2) is not yet resolved.
+Conservative default until OD-NEW-2 is resolved: DELETE is DENY for all roles.
+When OD-NEW-2 is resolved, the DELETE policy will be updated to ALLOW for coordinator
+with conditions (authorization verified; audit record created; Storage cleanup attempted).
+
+### reports - INSERT
+
+**Changed by PD-R6.**
+INSERT is now ALLOW for ALL five authenticated roles.
+Previously: DENY for administrator and management.
+
+### assignments - declined status
+
+**Changed by PD-R2.**
+Technicians may set their own assignment status to declined.
+Declined assignments are non-active: block work_logs INSERT and further status UPDATE.
+Declined assignments are excluded from can_view_report technician visibility.
 
 ---
 
 ## Permission Matrices
 
 Legend:
-- ALLOW = access permitted for rows matching the condition
-- DENY = no access (default when RLS enabled)
-- OWN = only rows where the user is the owner/author/recipient
-- ASSIGNED = only rows related to reports assigned to this user
-- PD = pending decision - policy cannot be finalized without owner input
-- APPROVED = policy finalized per owner decision
+- ALLOW: operation is permitted for this role
+- DENY: operation is denied
+- OWN: allowed on own records only
+- ASSIGNED: allowed on reports/assignments linked to technician's assignments
+- COND: allowed with specific conditions noted below the table
 
 ---
 
 ### profiles
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | OWN row only | OWN row only | OWN row only | ALL rows | OWN row only |
-| INSERT | DENY (via T4) | DENY | DENY | DENY | DENY | DENY |
-| UPDATE (non-role fields) | DENY | OWN row | OWN row | OWN row | ANY row | OWN row |
-| UPDATE (role field) | DENY | DENY | DENY | DENY | ANY row | DENY |
-| DELETE | DENY | DENY | DENY | DENY | DENY | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | OWN | ALLOW | OWN | ALLOW | ALLOW |
+| INSERT | DENY (T4 only) | DENY (T4 only) | DENY (T4 only) | DENY (T4 only) | DENY (T4 only) |
+| UPDATE | OWN (limited columns) | OWN (limited columns) | OWN (limited columns) | ALLOW (role + is_active management) | DENY |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
 
 Notes:
-- INSERT is handled exclusively by trigger T4. No direct INSERT policy needed.
-- The role column requires a separate UPDATE policy restricted to administrator.
-  Two UPDATE policies required: one for non-role fields (own row), one for role (administrator only).
-- DELETE is not permitted. Deactivation uses is_active = false (PD-D8).
+- INSERT is handled exclusively by Trigger T4 on auth.users INSERT.
+  No role may INSERT into profiles directly.
+- UPDATE: self-service columns = full_name, phone. Not: id, email, role, is_active.
+- Administrator UPDATE: may change role and is_active for other users (role management function).
+  Cannot change own role (application-enforced).
+- Coordinator SELECT: may view all profiles to assign technicians.
+- Management SELECT: may view all for oversight reporting.
 
 ---
 
-### role_change_audit
+### role_change_audit (APPROVED OD-NEW-1)
 
-APPROVED (OD-NEW-1): Table is confirmed in schema.
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | DENY | DENY | DENY | ALLOW | ALLOW |
+| INSERT | DENY | DENY | DENY | ALLOW (on role change) | DENY |
+| UPDATE | DENY | DENY | DENY | DENY | DENY |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | DENY | DENY | DENY | ALL rows | DENY |
-| INSERT | DENY | DENY | DENY | DENY | ALLOW | DENY |
-| UPDATE | DENY | DENY | DENY | DENY | DENY | DENY |
-| DELETE | DENY | DENY | DENY | DENY | DENY | DENY |
-
-Notes:
-- Append-only. UPDATE and DELETE denied for all roles.
-- INSERT for administrator: changed_by must equal auth.uid().
-  The INSERT policy predicate must also verify get_user_role() = 'administrator'.
+Append-only. Only administrator may INSERT (on performing role change).
 
 ---
 
 ### categories
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | ALL active rows | ALL active rows | ALL active rows | ALL rows | ALL rows |
-| INSERT | DENY | DENY | DENY | DENY | ALLOW | DENY |
-| UPDATE | DENY | DENY | DENY | DENY | ALLOW | DENY |
-| DELETE | DENY | DENY | DENY | DENY | DENY (soft deactivate) | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | ALLOW (active only) | ALLOW | ALLOW (active only) | ALLOW | ALLOW |
+| INSERT | DENY | ALLOW | DENY | ALLOW | DENY |
+| UPDATE | DENY | ALLOW | DENY | ALLOW | DENY |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
+
+Notes: SELECT filtered to is_active = true for student_personnel and technician.
+Soft-delete only (is_active = false).
 
 ---
 
 ### locations
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | ALL active rows | ALL active rows | ALL active rows | ALL rows | ALL rows |
-| INSERT | DENY | DENY | DENY | DENY | ALLOW | DENY |
-| UPDATE | DENY | DENY | DENY | DENY | ALLOW | DENY |
-| DELETE | DENY | DENY | DENY | DENY | DENY (soft deactivate) | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | ALLOW (active only) | ALLOW | ALLOW (active only) | ALLOW | ALLOW |
+| INSERT | DENY | ALLOW | DENY | ALLOW | DENY |
+| UPDATE | DENY | ALLOW | DENY | ALLOW | DENY |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
 
-Notes: PD-D1 may affect table structure.
+Soft-delete only.
 
 ---
 
 ### reports
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | OWN reports | ALL reports | ASSIGNED reports (PD-R1) | ALL reports | ALL reports |
-| INSERT | DENY | ALLOW | ALLOW | ALLOW | DENY (PD-R6) | DENY (PD-R6) |
-| UPDATE (status: cancel own) | DENY | OWN, submitted or under_review only (APPROVED PD-W2) | ALL non-terminal | DENY | DENY | DENY |
-| UPDATE (status: other transitions) | DENY | DENY | ALL non-terminal | Own assigned reports | DENY | DENY |
-| UPDATE (priority, hazard flag) | DENY | DENY | ALLOW | DENY | DENY | DENY |
-| DELETE | DENY | DENY | DENY | DENY | DENY | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | OWN | ALLOW | ASSIGNED (PD-R1) | ALLOW | ALLOW |
+| INSERT | ALLOW | ALLOW | ALLOW | ALLOW (PD-R6) | ALLOW (PD-R6) |
+| UPDATE | OWN (cancel only, PD-W2) | ALLOW | OWN assignment (PD-W1 on_hold) | DENY | DENY |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
 
 Notes:
-- SELECT for technician is pending PD-R1. Conservative default: own assignments only.
-- Coordinator UPDATE covers all status transitions including cancellation (APPROVED PD-W3),
-  work holds (APPROVED PD-W1), and all other non-terminal transitions.
-- student_personnel UPDATE for cancellation: restricted to own reports at submitted or under_review.
-  The status column can only be set to cancelled in this context (APPROVED PD-W2).
-- Technician UPDATE for on_hold: allowed for own assigned in_progress reports (APPROVED PD-W1).
-- confirmed_priority updatable by coordinator only. No other role can write this column.
-- No role can DELETE reports.
+- INSERT ALLOW for all five authenticated roles (APPROVED PD-R6, 2026-10-18).
+- Technician SELECT (ASSIGNED): uses can_view_report() which checks for any non-declined
+  assignment record for auth.uid() (APPROVED PD-R1).
+- student_personnel UPDATE: own reports at submitted or under_review status to cancelled only
+  (APPROVED PD-W2).
+- Technician UPDATE: own in_progress/on_hold assignment's related report for on_hold/in_progress
+  transition (APPROVED PD-W1). Restricted to status column only.
+- Administrator and management: INSERT to submit own reports only. No UPDATE or DELETE.
 
 ---
 
 ### report_attachments
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | OWN report attachments | ALL | ASSIGNED report attachments (PD-R1) | ALL | ALL |
-| INSERT | DENY | Own reports at submission | DENY | Assigned reports | DENY | DENY |
-| UPDATE | DENY | DENY (PD-D2) | DENY (PD-D2) | DENY (PD-D2) | DENY (PD-D2) | DENY |
-| DELETE | DENY | DENY (PD-D2) | DENY (PD-D2) | DENY (PD-D2) | DENY (PD-D2) | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | OWN REPORTS | ALLOW | ASSIGNED REPORTS (PD-R1) | ALLOW | ALLOW |
+| INSERT | ALLOW (own report) | ALLOW | ALLOW (assigned report) | DENY | DENY |
+| UPDATE | DENY | DENY | DENY | DENY | DENY |
+| DELETE | DENY | DENY (pending OD-NEW-2) | DENY | DENY | DENY |
 
-Notes:
-- INSERT: server-side logic must enforce the 5-file-per-report limit before inserting.
-  The RLS policy permits the INSERT; the count check is in the server action.
-- UPDATE and DELETE pending PD-D2. Currently DENY for all roles (conservative default).
+Notes (APPROVED PD-D2):
+- UPDATE: DENY for ALL roles. Attachments are immutable after upload.
+- DELETE: coordinator-controlled deletion is APPROVED in principle (PD-D2).
+  Cannot be fully implemented until OD-NEW-2 (deletion audit mechanism) is resolved.
+  Current default: DENY for all roles until OD-NEW-2 is resolved.
+  Once OD-NEW-2 is resolved, coordinator DELETE will be ALLOW with conditions:
+  (1) audit record created (deleted_at, deleted_by recorded), (2) Storage deletion attempted,
+  (3) failures logged for async cleanup.
+- INSERT: per-report count (max 5) and MIME/size validation enforced server-side before INSERT.
 
 ---
 
 ### report_status_history
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | OWN report history | ALL | ASSIGNED report history (PD-R1) | ALL | ALL |
-| INSERT | DENY | Own report cancellation (APPROVED PD-W2) | ALL transitions | Own assigned transitions | DENY | DENY |
-| UPDATE | DENY | DENY | DENY | DENY | DENY | DENY |
-| DELETE | DENY | DENY | DENY | DENY | DENY | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | OWN REPORTS | ALLOW | ASSIGNED REPORTS (PD-R1) | ALLOW | ALLOW |
+| INSERT | ALLOW (own report transitions) | ALLOW | ALLOW (own assignment transitions) | DENY | DENY |
+| UPDATE | DENY | DENY | DENY | DENY | DENY |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
 
-INSERT policy details:
-- student_personnel INSERT is limited to: new_status = 'cancelled' AND
-  the parent report.reporter_id = auth.uid() AND parent report.status IN ('submitted', 'under_review').
-- coordinator INSERT is permitted for all transitions.
-- technician INSERT is permitted for transitions on their own assigned reports
-  (in_progress, on_hold, completed transitions). APPROVED PD-W1 adds on_hold.
-- Append-only: UPDATE and DELETE denied for all roles including administrator.
+Append-only. INSERT policies for specific transitions:
+- student_personnel INSERT: own reports, status = cancelled, from submitted or under_review (PD-W2).
+- Coordinator INSERT: any report, any valid transition (PD-W3 and others).
+- Technician INSERT: own assigned reports, transitions covered: in_progress, completed,
+  on_hold (PD-W1), declined (own assignment status change linked to report context).
 
 ---
 
 ### report_comments
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | OWN report comments | ALL | ASSIGNED report comments (PD-R1) | ALL | ALL |
-| INSERT | DENY | OWN reports | ANY report | ASSIGNED reports | DENY | DENY |
-| UPDATE | DENY | OWN comments (PD-D3) | OWN comments (PD-D3) | OWN comments (PD-D3) | DENY | DENY |
-| DELETE | DENY | DENY (PD-D3) | DENY (PD-D3) | DENY (PD-D3) | DENY | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | OWN REPORTS | ALLOW | ASSIGNED REPORTS (PD-R1) | DENY | DENY |
+| INSERT | ALLOW (own report) | ALLOW | ALLOW (assigned, non-declined report) | DENY | DENY |
+| UPDATE | DENY | DENY | DENY | DENY | DENY |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
 
-Notes: UPDATE and DELETE pending PD-D3. Currently DENY (conservative default).
+Notes (APPROVED PD-D3):
+- UPDATE: DENY for ALL roles. Comments are immutable after creation.
+- DELETE: DENY for ALL roles. No moderation or retention exception for MVP.
+- Corrections must be submitted as follow-up comments.
+- Technician INSERT: allowed on reports they have a non-declined assignment for (PD-R1).
 
 ---
 
 ### assignments
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | DENY | ALL | OWN assignments | ALL | ALL |
-| INSERT | DENY | DENY | ALLOW | DENY | DENY | DENY |
-| UPDATE (status, timestamps) | DENY | DENY | ALLOW | OWN assignment only | DENY | DENY |
-| UPDATE (notes) | DENY | DENY | ALLOW | DENY | DENY | DENY |
-| DELETE | DENY | DENY | DENY | DENY | DENY | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | DENY | ALLOW | OWN | ALLOW | ALLOW |
+| INSERT | DENY | ALLOW | DENY | DENY | DENY |
+| UPDATE | DENY | ALLOW | OWN (limited transitions, PD-W1, PD-R2) | DENY | DENY |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
 
 Notes:
-- Coordinator UPDATE covers reassignment and cancellation marking (per APPROVED PD-W3).
-- Technician UPDATE on status: covers in_progress, completed, and on_hold transitions
-  (APPROVED PD-W1 adds on_hold). Limited to own assignment record.
-- DELETE not permitted. Records are marked reassigned or cancelled.
+- Coordinator UPDATE: covers reassignment, cancellation marking (PD-W3, PD-W4), and any
+  assignment-level status changes.
+- Technician UPDATE on own assignment: allowed transitions only —
+  assigned -> in_progress, in_progress -> completed,
+  in_progress -> on_hold (PD-W1), on_hold -> in_progress (PD-W1),
+  assigned -> declined (PD-R2 - requires reason, see OD-NEW-3 for reason storage gap).
+- Cancelled assignments (status = cancelled): no further UPDATE from any role.
+  Cancelled is terminal (APPROVED PD-W4).
+- Declined assignments (status = declined): no further UPDATE from any role.
+  Declined is terminal (APPROVED PD-R2).
+- Cancellation (APPROVED PD-W4): all active assignments (assigned, in_progress, on_hold)
+  are marked cancelled atomically when the parent report is cancelled.
+  This UPDATE is performed by the coordinator's UPDATE permission on assignments.
+- DELETE not permitted. Records are marked reassigned, cancelled, or declined.
 
 ---
 
 ### work_logs
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | DENY | ALL | OWN work logs | ALL | ALL |
-| INSERT | DENY | DENY | DENY | OWN assignments only | DENY | DENY |
-| UPDATE | DENY | DENY | DENY | DENY | DENY | DENY |
-| DELETE | DENY | DENY | DENY | DENY | DENY | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | DENY | ALLOW | OWN ASSIGNMENTS | ALLOW | ALLOW |
+| INSERT | DENY | DENY | OWN ACTIVE ASSIGNMENTS (COND) | DENY | DENY |
+| UPDATE | DENY | DENY | DENY | DENY | DENY |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
 
-Notes: Append-only. INSERT for technician requires technician_id = auth.uid() AND
-the assignment.technician_id = auth.uid().
+Notes: Append-only. INSERT for technician requires:
+- technician_id = auth.uid()
+- The referenced assignment.technician_id = auth.uid()
+- assignment.status NOT IN ('cancelled', 'declined') (APPROVED PD-W4, PD-R2)
+
+Once an assignment is cancelled or declined, the technician cannot insert
+additional work_logs against it. The INSERT policy predicate must include a check
+that the referenced assignment is not in cancelled or declined status.
+
+Technician SELECT: own work_logs only (linked to own assignments). Technicians do not
+see other technicians' work_logs on the same report, even if they have overlapping
+assignment history on that report.
 
 ---
 
 ### verifications
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | OWN report verifications | ALL | ASSIGNED report verifications (PD-R1) | ALL | ALL |
-| INSERT | DENY | DENY | ALLOW (with constraints below) | DENY | DENY | DENY |
-| UPDATE | DENY | DENY | DENY | DENY | DENY | DENY |
-| DELETE | DENY | DENY | DENY | DENY | DENY | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | OWN REPORTS | ALLOW | ASSIGNED REPORTS (PD-R1) | ALLOW | ALLOW |
+| INSERT | DENY | ALLOW (COND) | DENY | DENY | DENY |
+| UPDATE | DENY | DENY | DENY | DENY | DENY |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
 
-INSERT constraints for coordinator (all must be satisfied):
-1. verified_by = auth.uid()
-2. The report (report_id) must have status = completed
-3. auth.uid() must NOT equal the technician_id of any active assignment for this report (D2)
-4. auth.uid() must NOT equal reports.reporter_id for this report (APPROVED PD-R4)
+INSERT conditions for coordinator:
+1. Report must be in completed status.
+2. verified_by = auth.uid() (coordinator inserts their own verification record).
+3. verified_by must NOT be the technician_id of the active (completed) assignment (D2).
+4. verified_by must NOT equal reports.reporter_id for this report (APPROVED PD-R4).
 
-Notes:
-- Constraints 3 and 4 are both database-level (RLS policy predicate) AND application-level.
-- Append-only. UPDATE and DELETE denied for all roles.
+Note: Conditions 3 and 4 both apply. A coordinator who is ALSO the reporter cannot verify.
+A coordinator who performed the work (unlikely, but prevented) cannot verify.
+Conditions 3 and 4 require JOINs to assignments and reports in the INSERT policy predicate.
 
 ---
 
 ### notifications
 
-| Operation | Unauthenticated | student_personnel | coordinator | technician | administrator | management |
-|---|---|---|---|---|---|---|
-| SELECT | DENY | OWN | OWN | OWN | OWN | OWN |
-| INSERT | DENY | DENY | DENY | DENY | DENY | DENY |
-| UPDATE (is_read) | DENY | OWN | OWN | OWN | OWN | OWN |
-| DELETE | DENY | DENY | DENY | DENY | DENY | DENY |
+| Operation | student_personnel | coordinator | technician | administrator | management |
+|---|---|---|---|---|---|
+| SELECT | OWN | OWN | OWN | OWN | OWN |
+| INSERT | DENY | DENY | DENY | DENY | DENY |
+| UPDATE | OWN (is_read only) | OWN (is_read only) | OWN (is_read only) | OWN (is_read only) | OWN (is_read only) |
+| DELETE | DENY | DENY | DENY | DENY | DENY |
 
-Notes:
-- INSERT is by application server action (PD-D6 RECOMMENDED) using service role context,
-  which bypasses RLS. The INSERT policy for user-context is DENY.
-- UPDATE restricted to is_read column on own notifications. Column-level enforcement
-  at application layer; RLS grants row-level update permission to own rows.
+Notes: INSERT handled by application service role or trigger.
+Only is_read column may be updated by the recipient. All other columns are immutable.
 
 ---
 
 ## Unresolved RLS Decisions
 
-| Decision ID | Affected Tables | Blocked Policy | Status |
-|---|---|---|---|
-| PD-R1 | reports, assignments, report_status_history, report_comments, report_attachments, work_logs, verifications | Technician SELECT scope | RECOMMENDED |
-| PD-R2 | assignments | declined status value and workflow | OPEN |
-| PD-R6 | reports | Administrator and Management INSERT | OPEN |
-| PD-D2 | report_attachments | UPDATE and DELETE policies | RECOMMENDED |
-| PD-D3 | report_comments | UPDATE and DELETE policies | RECOMMENDED |
-| PD-D6 | notifications | INSERT policy (service role vs trigger) | RECOMMENDED |
-| PD-W4 | assignments | Assignment UPDATE to cancelled on report cancellation | RECOMMENDED |
+The following open decisions affect RLS policies and must be resolved before final
+implementation. They do not block core migration preparation but do block specific features.
 
-Resolved in Phase 3B (no longer blocking):
+| Decision | Affected Tables | Impact | Status |
+|---|---|---|---|
+| OD-NEW-2 | report_attachments | Coordinator DELETE policy cannot be finalized without audit columns (deleted_at, deleted_by) | OPEN |
+| OD-NEW-3 | assignments | Decline reason storage — technician UPDATE to declined cannot be fully audited | OPEN |
+| OD-NEW-4 | reports, report_attachments, report_status_history, report_comments, verifications | Confirm that declined-only assignments exclude technician visibility | OPEN |
+| PD-D6 | notifications | INSERT policy: service role vs trigger vs function | RECOMMENDED |
+| PD-D8 | profiles | Hard DELETE support vs soft-deactivation only | OPEN |
+
+Resolved in Phase 3B and 3C (no longer blocking):
 - PD-R4: Self-verification prohibition finalized. APPROVED.
 - PD-R5: Resolved by PD-W2. Reporter cancellation finalized. APPROVED.
 - PD-R3: Resolved by PD-W1. Work hold actor finalized. APPROVED.
 - PD-W1: Work hold finalized. APPROVED.
 - PD-W2: Reporter cancellation finalized. APPROVED.
 - PD-W3: Coordinator cancellation finalized. APPROVED.
+- PD-W4: Assignment cancellation on report cancellation. APPROVED.
+  Active assignments (assigned, in_progress, on_hold) are marked cancelled atomically.
+  Cancelled assignments block further work_log inserts and status updates via RLS.
+- PD-D2: Attachment immutability finalized. UPDATE DENY all. APPROVED.
+  DELETE coordinator-controlled (pending OD-NEW-2 for audit mechanism).
+- PD-D3: Comment immutability finalized. UPDATE/DELETE DENY all. APPROVED.
+- PD-R1: Technician visibility finalized. Non-declined assignment predicate. APPROVED.
+- PD-R2: Assignment decline finalized. declined enum value added. APPROVED.
+  Further work blocked for declined/cancelled assignments.
+- PD-R6: All roles may submit reports. reports INSERT ALLOW for all roles. APPROVED.
 
 ---
 
 ## Security Notes and Warnings
 
-1. RLS deny-by-default: with RLS enabled and no matching policy, SELECT silently returns
-   zero rows; mutations raise permission error. Do not disable RLS to fix empty results.
+### can_view_report JOIN Complexity
 
-2. NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (anon key) is visible in the client bundle.
-   Its safety depends entirely on RLS being correct. Misconfigured RLS = security breach.
+The technician visibility predicate (can_view_report) requires a JOIN to assignments.
+This helper function should be implemented with careful attention to:
+1. Index on assignments (report_id, technician_id, status) for query performance.
+2. SECURITY DEFINER to prevent privilege escalation from within the function body.
+3. Result should not be cached across transactions (use a per-query evaluation).
 
-3. Service role key bypasses RLS entirely. Use only in server-side code. Never in client bundle.
+### Coordinator Deletion of Attachments (Pending OD-NEW-2)
 
-4. auth.uid() returns NULL for unauthenticated requests. All policies using auth.uid()
-   implicitly deny unauthenticated access in equality comparisons.
+When OD-NEW-2 is resolved and coordinator deletion is implemented:
+- The DELETE policy must verify the coordinator's role before allowing deletion.
+- The application must create an audit record (coordinator identity, timestamp, file_path)
+  BEFORE the Database delete. If the application record creation fails, abort.
+- Never delete from Storage inside a database transaction. Storage operations are not
+  transactional with the database.
+- Log all Storage deletion outcomes (success and failure) to application logs.
 
-5. Column-level UPDATE restrictions (e.g., role column, notification fields other than is_read)
-   are enforced at the application layer. PostgreSQL RLS operates at row level, not column level.
+### Verifications INSERT Policy and JOIN
 
-6. Audit tables (report_status_history, verifications, work_logs, role_change_audit) must have
-   UPDATE and DELETE denied for ALL roles, including administrator.
+The verifications INSERT conditions (3 and 4) both require JOINs in the RLS predicate:
+- Condition 3 (D2): JOIN to assignments to get technician_id of the assignment.
+- Condition 4 (PD-R4): JOIN to reports to get reporter_id.
+Test these predicates carefully for correctness. If using a helper function, mark it
+SECURITY DEFINER and ensure it cannot be influenced by the inserting user's row policies.
 
-7. The PD-R4 self-verification check requires a JOIN to the reports table in the RLS policy.
-   This must be expressed as: EXISTS (SELECT 1 FROM reports WHERE id = verifications.report_id
-   AND reporter_id != auth.uid()). Care is needed to avoid performance issues on this JOIN.
+### Declined Assignments and Visibility
 
-8. Every RLS policy must be tested individually. Test matrix: all 6 roles x all 4 operations
-   x all edge cases (own vs other, active vs cancelled assignment, etc.).
+Declined assignments are excluded from can_view_report. If a technician declined an
+assignment and was never assigned again, they cannot view that report.
+This is the least-privilege interpretation of PD-R1.
+Confirm with OD-NEW-4 owner decision.
 
 ---
 
-*Phase 3B update 2026-10-18. See SCHEMA_PROPOSAL.md for table definitions.*
-*See OPEN_DECISIONS.md for all decisions requiring owner input.*
+*Phase 3C update 2026-10-18. See OPEN_DECISIONS.md for all decisions.*
+*See SCHEMA_PROPOSAL.md for table definitions and constraints.*
+*See DATA_DICTIONARY.md for column-level definitions.*

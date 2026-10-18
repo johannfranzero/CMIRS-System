@@ -1,18 +1,16 @@
 # CMIRS - Open Decisions
 
-> **Phase 3B Update:** Seven decisions were approved by the project owner on 2026-10-18.
-> These are recorded below with status OWNER APPROVED.
-> All remaining decisions retain their prior status and classification.
-> Do not treat any OPEN or RECOMMENDED decision as an approved requirement.
+> **Phase 3C Update (2026-10-18):** Five additional decisions approved — PD-D2, PD-D3, PD-R1, PD-R2, PD-R6.
+> Three schema gaps identified: OD-NEW-2, OD-NEW-3, OD-NEW-4.
+> All OPEN and RECOMMENDED decisions still require explicit owner approval before implementation.
 
 ## How to Use This Document
 
 For each decision:
-1. Decisions marked OWNER APPROVED are final. They are incorporated into all proposal documents.
-2. Decisions marked RECOMMENDED have a clear recommendation but no owner answer yet.
-3. Decisions marked OPEN have options but no clear preferred direction.
-4. All OPEN and RECOMMENDED decisions require an explicit owner response before the
-   relevant part of the migration can be prepared.
+1. OWNER APPROVED decisions are final and incorporated into all proposal documents.
+2. RECOMMENDED decisions have a clear preferred direction but no owner confirmation yet.
+3. OPEN decisions have options but no clear preferred direction.
+4. Schema gaps (OD-NEW-X) are gaps identified during reconciliation that require owner input.
 
 ---
 
@@ -21,9 +19,12 @@ For each decision:
 | ID | Source | Status | Summary |
 |---|---|---|---|
 | OD-NEW-1 | SCHEMA_PROPOSAL | **OWNER APPROVED** | role_change_audit table included |
+| OD-NEW-2 | Phase 3C review | OPEN | Attachment deletion audit mechanism (schema gap) |
+| OD-NEW-3 | Phase 3C review | OPEN | Assignment decline reason storage (schema gap) |
+| OD-NEW-4 | Phase 3C review | OPEN | Technician visibility for declined-only assignments |
 | PD-D1 | DATABASE.md | RECOMMENDED | Location table structure |
-| PD-D2 | DATABASE.md | RECOMMENDED | Attachment mutability |
-| PD-D3 | DATABASE.md | RECOMMENDED | Comment mutability |
+| PD-D2 | DATABASE.md | **OWNER APPROVED** | Attachments immutable; coordinator-controlled deletion |
+| PD-D3 | DATABASE.md | **OWNER APPROVED** | Comments immutable after creation |
 | PD-D4 | DATABASE.md | **OWNER APPROVED** | Report number format: RPT-000001 |
 | PD-D5 | DATABASE.md | **OWNER APPROVED** | Photo limits: 5 files, 10 MB, JPEG/PNG/WebP |
 | PD-D6 | DATABASE.md | RECOMMENDED | Notification creation: application-level |
@@ -31,12 +32,12 @@ For each decision:
 | PD-D8 | New | OPEN | Hard user deletion policy |
 | PD-D9 | New | RECOMMENDED | Timestamps on categories |
 | PD-D10 | New | RECOMMENDED | Uniqueness constraint on locations |
-| PD-R1 | ROLES.md | RECOMMENDED | Technician visibility scope |
-| PD-R2 | ROLES.md | OPEN | Technician ability to decline assignment |
+| PD-R1 | ROLES.md | **OWNER APPROVED** | Technicians access own-assigned reports only |
+| PD-R2 | ROLES.md | **OWNER APPROVED** | Technicians may decline assignments with required reason |
 | PD-R3 | ROLES.md | RESOLVED BY PD-W1 | Technician ability to request work hold |
 | PD-R4 | ROLES.md, SECURITY.md | **OWNER APPROVED** | Coordinator self-verification prohibited |
 | PD-R5 | ROLES.md | RESOLVED BY PD-W2 | Reporter cancellation authority |
-| PD-R6 | ROLES.md | OPEN | Administrator and Management as reporters |
+| PD-R6 | ROLES.md | **OWNER APPROVED** | All authenticated roles may submit reports |
 | PD-S1 | SECURITY.md | OPEN | API rate limiting strategy |
 | PD-S2 | SECURITY.md | OPEN | Session timeout duration |
 | PD-S3 | SECURITY.md | OPEN | Password policy requirements |
@@ -44,13 +45,17 @@ For each decision:
 | PD-W1 | WORKFLOW.md | **OWNER APPROVED** | Work holds: technician or coordinator, with required reason |
 | PD-W2 | WORKFLOW.md | **OWNER APPROVED** | Reporter cancellation at submitted or under_review only |
 | PD-W3 | WORKFLOW.md | **OWNER APPROVED** | Coordinator cancellation at any non-terminal stage |
-| PD-W4 | WORKFLOW.md | RECOMMENDED | Assignment handling on cancellation |
+| PD-W4 | WORKFLOW.md | **OWNER APPROVED** | On cancellation, mark all active assignments cancelled |
 | PD-W5 | WORKFLOW.md | OPEN | Maximum reopening count |
 | PD-W6 | WORKFLOW.md | RECOMMENDED | under_review not always required |
 
-Migration-blocking status:
-- Blocking migration: PD-D1, PD-D2, PD-D3, PD-D8, PD-R1, PD-R2, PD-R6, PD-W4
-- Can wait until implementation: PD-D6, PD-D7, PD-D9, PD-D10, PD-S1, PD-S2, PD-S3, PD-S4, PD-W5, PD-W6
+Migration-blocking status (Phase 3C):
+- No core schema, enum, or constraint decisions remain unresolved for migration preparation.
+- PD-D1 (location table structure): RECOMMENDED to proceed with single table; not a blocker.
+- OD-NEW-2 (deletion audit), OD-NEW-3 (decline reason), OD-NEW-4 (declined visibility):
+  feature-level gaps; they do not prevent core migration preparation.
+- Security (PD-S1 to PD-S4) and operational decisions (PD-W5, PD-W6) do not affect schema.
+- Recommendation: the project is READY for migration preparation. See PHASE_3C_REVIEW.md.
 
 ---
 
@@ -81,9 +86,9 @@ Concurrent report creation must not produce duplicate numbers.
 
 **Implementation notes:**
 
-1. Use a PostgreSQL `SEQUENCE` as the source of the sequential number.
+1. Use a PostgreSQL SEQUENCE as the source of the sequential number.
    Sequences are transaction-safe and concurrency-safe by design: each call to
-   `nextval()` returns a guaranteed-unique value even under concurrent inserts.
+   nextval() returns a guaranteed-unique value even under concurrent inserts.
    Gaps are acceptable (e.g., if a transaction is rolled back after consuming a
    sequence value, that number is not reused).
 
@@ -111,41 +116,12 @@ Concurrent report creation must not produce duplicate numbers.
 
 **Implementation notes and validation layers:**
 
-File validation must occur at multiple layers. The database CHECK constraint alone
-cannot validate the actual uploaded file content - it only validates the metadata
-stored in the report_attachments table. Full security requires all layers below:
-
-Layer 1 - Client-side (UX only, not security-critical):
-  - Reject files exceeding 10 MB before upload.
-  - Reject file types other than image/jpeg, image/png, image/webp by MIME type sniffing.
-  - Prevent selecting more than 5 files for a single report.
-  These are for user experience and to reduce unnecessary uploads, not for security.
-
-Layer 2 - Server-side (before Supabase Storage upload, security-critical):
-  - Verify the count of existing attachments for the report is below 5.
-  - Verify the file size is at or below 10,485,760 bytes using the actual byte count.
-  - Determine MIME type from file content (magic bytes), not from the filename extension
-    or the browser-supplied Content-Type header.
-  - Reject if MIME type is not image/jpeg, image/png, or image/webp.
-  - Only upload to Supabase Storage after all server-side checks pass.
-
-Layer 3 - Supabase Storage policy:
-  - Configure allowed MIME types and maximum file size in the storage bucket policy
-    to provide defense-in-depth. This blocks direct API calls that bypass the application.
-
-Layer 4 - Database constraint (defense-in-depth):
-  - CHECK constraint on mime_type column: mime_type IN ('image/jpeg', 'image/png', 'image/webp').
-  - CHECK constraint on file_size: file_size > 0 AND file_size <= 10485760.
-  - These constraints prevent invalid records from being inserted even if the
-    application layer is bypassed.
-
-Layer 5 - Database count enforcement:
-  - The per-report count limit of 5 cannot be enforced by a simple CHECK constraint
-    on a single row. It is enforced in the server-side action before inserting the
-    attachment record. A trigger could also enforce this but adds complexity.
-
-The database constraints in Layer 4 are added to SCHEMA_PROPOSAL.md and DATA_DICTIONARY.md
-as a result of this decision. See chk_file_size added to report_attachments.
+Layer 1 - Client-side (UX only): reject before upload. Not a security boundary.
+Layer 2 - Server-side (security-critical): verify count, size, and MIME from file content (magic bytes).
+Layer 3 - Supabase Storage policy: bucket-level enforcement (defense-in-depth).
+Layer 4 - Database constraints: CHECK (file_size > 0 AND file_size <= 10485760) and
+          CHECK (mime_type IN ('image/jpeg','image/png','image/webp')) on report_attachments.
+Layer 5 - Count limit: enforced server-side before INSERT; not expressible as a single-row CHECK.
 
 ---
 
@@ -154,34 +130,11 @@ as a result of this decision. See chk_file_size added to report_attachments.
 **Source:** ROLES.md, SECURITY.md
 **Status: OWNER APPROVED (2026-10-18)**
 **Decision:** A coordinator must not verify a report they personally submitted.
-This is in addition to the existing D2 restriction that prevents the performing
-technician from verifying their own work.
 
-**Implementation notes:**
-
-The self-verification prohibition must check the authenticated coordinator (auth.uid())
-against the report's original submitter (reports.reporter_id), not only against the
-technician who performed the work.
-
-Enforcement layers:
-
-Layer 1 - RLS policy on verifications INSERT (database-level):
-  - In addition to the existing D2 check (auth.uid() != active technician),
-    add a check: auth.uid() != reports.reporter_id for the report being verified.
-  - This must be part of the INSERT policy predicate, joining reports to check reporter_id.
-  - This is the primary security enforcement layer.
-
-Layer 2 - Application logic:
-  - Server action checks auth.uid() against reports.reporter_id before attempting insert.
-  - Provides a clear error message to the user.
-  - Application check runs before the database, improving UX.
-
-The combined prohibition is: verified_by must not equal either:
-  (a) the technician_id of the active assignment for this report (D2), OR
-  (b) the reporter_id of the report (PD-R4 owner decision).
-
-SCHEMA_PROPOSAL.md verifications key notes and DATA_DICTIONARY.md verified_by
-description are updated to reflect this.
+Combined prohibition in verifications INSERT policy:
+- verified_by must not equal the technician_id of the active assignment (D2).
+- verified_by must not equal reports.reporter_id (PD-R4).
+Enforced at both RLS and application levels.
 
 ---
 
@@ -189,35 +142,8 @@ description are updated to reflect this.
 
 **Source:** WORKFLOW.md
 **Status: OWNER APPROVED (2026-10-18)**
-**Decision:** Both technicians and coordinators may initiate a work hold, subject to
-authorization and required reason/audit rules.
-
-**Implementation notes:**
-
-A work hold moves a report from in_progress to on_hold.
-
-Authorized actors:
-- Technician with an active (in_progress) assignment for the report.
-- Coordinator.
-
-Requirements for both actors:
-- A non-empty reason must be provided.
-- The reason is stored in report_status_history.reason for the transition record.
-- The transition is recorded in report_status_history as any other status change.
-
-Resuming from on_hold (on_hold to in_progress):
-- The same authorized actors (technician with active assignment, or coordinator)
-  may resume work. A reason is not required for resumption, but may be provided.
-
-Unauthorized actors:
-- student_personnel cannot initiate or resume a work hold.
-- administrator and management cannot initiate or resume a work hold.
-
-RLS impact: The reports UPDATE policy for status transitions must allow:
-- Technician UPDATE on reports where they have an active assignment (status = in_progress).
-- Coordinator UPDATE on any report (status = in_progress to on_hold).
-
-PD-R3 is resolved by this decision. It is marked RESOLVED BY PD-W1 in the register.
+**Decision:** Both technicians (own active assignment) and coordinators may initiate a
+work hold (in_progress to on_hold). Both may resume (on_hold to in_progress). Reason required.
 
 ---
 
@@ -225,34 +151,8 @@ PD-R3 is resolved by this decision. It is marked RESOLVED BY PD-W1 in the regist
 
 **Source:** WORKFLOW.md
 **Status: OWNER APPROVED (2026-10-18)**
-**Decision:** Reporters may cancel their own reports only while the report status is
-submitted or under_review.
-
-**Implementation notes:**
-
-Authorized cancellation actor and conditions:
-- The reporter (reports.reporter_id = auth.uid()) may cancel only when status is
-  submitted or under_review.
-- A reason is required (stored in report_status_history.reason).
-
-Prevented scenarios:
-- A reporter cannot cancel a report that has been assigned, is in_progress, on_hold,
-  completed, or reopened. Those stages require coordinator cancellation (PD-W3).
-- A reporter cannot cancel a report they did not submit.
-
-RLS impact: The reports UPDATE policy for student_personnel must be limited to:
-- Status transitions from submitted or under_review to cancelled only.
-- Only for rows where reporter_id = auth.uid().
-- Only if reason is provided (application-enforced; cannot be checked by RLS directly).
-
-report_status_history INSERT: the reporter must be able to insert the cancellation
-history record (changed_by = auth.uid(), new_status = cancelled).
-
-PD-R5 is resolved by this decision. It is marked RESOLVED BY PD-W2 in the register.
-
-Status transition map update:
-- submitted to cancelled: Actors are now Reporter and Coordinator. Reason required.
-- under_review to cancelled: Actors are now Reporter and Coordinator. Reason required.
+**Decision:** Reporters may cancel their own reports only at submitted or under_review.
+Reason required. After assignment, only coordinator can cancel (PD-W3).
 
 ---
 
@@ -260,37 +160,283 @@ Status transition map update:
 
 **Source:** WORKFLOW.md
 **Status: OWNER APPROVED (2026-10-18)**
-**Decision:** Coordinators may cancel reports at any non-terminal stage, with a required
-reason and preserved status history.
+**Decision:** Coordinators may cancel reports at any non-terminal stage. Reason required.
+Status history preserved. Active assignments marked cancelled (PD-W4).
 
-**Implementation notes:**
+---
 
-Non-terminal stages from which coordinator can cancel:
-- submitted, under_review, assigned, in_progress, on_hold, completed, reopened.
+### PD-W4 - Assignment Handling on Cancellation
 
-Requirements:
-- A non-empty reason must be provided for all coordinator cancellations.
-- The reason is stored in report_status_history.reason.
-- Every cancellation produces a report_status_history record
-  (previous_status -> cancelled).
+**Source:** WORKFLOW.md
+**Status: OWNER APPROVED (2026-10-18)**
+**Decision:** When a report is cancelled, all active assignments are marked cancelled.
 
-If a report is cancelled while assigned or in_progress:
-- The active assignment record must be updated: assignments.status = cancelled.
-- The technician must receive a report_cancelled notification.
-- See PD-W4 for the full assignment-handling policy (still open, but the assignment
-  must be marked cancelled per this decision's notification requirement).
+Active statuses: assigned, in_progress, on_hold.
+Non-active (not modified): completed, reassigned, cancelled.
 
-RLS impact: The existing coordinator UPDATE policy on reports (status changes) already
-covers this. The RLS policy must allow the coordinator to transition to cancelled from
-any non-terminal status.
+All writes (report status, status history, assignment updates, notifications) must occur
+within a single database transaction. Partial cancellation is not permitted.
 
-Status transition map: All coordinator-to-cancelled transitions are now finalized:
-- submitted, under_review, assigned, in_progress, on_hold, completed, reopened
-  to cancelled: Actor is Coordinator. Reason required.
+Cancelled assignments are terminal: no further status updates or work_log inserts.
+
+---
+
+## Phase 3C Owner-Approved Decisions
+
+### PD-D2 - Attachment Mutability
+
+**Source:** DATABASE.md
+**Status: OWNER APPROVED (2026-10-18)**
+**Decision:**
+- Attachments cannot be edited or replaced after upload. They are immutable once created.
+- Deletion is coordinator-controlled and must be authorized and auditable.
+- Upload limits remain: max 5 per report, 10 MB per file, JPEG/PNG/WebP (preserved from PD-D5).
+- Zero attachments is valid (D4 preserved).
+
+**Database metadata and Supabase Storage relationship:**
+The report_attachments table stores metadata only (file_path, file_name, file_size, mime_type).
+The actual file content lives in a private Supabase Storage bucket. Deleting an attachment
+requires two distinct operations:
+1. Remove the metadata record from report_attachments (database).
+2. Delete the file from Supabase Storage using the stored file_path.
+These two operations are NOT atomic. A database transaction cannot roll back a completed
+Storage deletion, nor can it guarantee a Storage deletion will succeed.
+
+**Safe handling of partial failures:**
+Recommended two-phase approach for coordinator-initiated deletion:
+1. Remove (or soft-delete) the database record within a database transaction.
+   If this fails, abort immediately. No Storage operation is attempted.
+2. After the database operation commits, attempt to delete the Storage object.
+3. If the Storage deletion fails: the database record is already gone; the file is
+   inaccessible from the application. Log the orphaned file_path for later cleanup.
+4. A background retry job should periodically clean up Storage objects whose database
+   records no longer exist.
+5. Never block the user-facing result on a Storage failure. The attachment is inaccessible
+   once the database record is removed.
+6. Application logs must capture every Storage deletion attempt and its outcome.
+
+**Schema gap — see OD-NEW-2:**
+The current report_attachments schema has no columns to record who deleted an attachment
+and when. Coordinator-controlled deletion requires an auditable mechanism before it can
+be safely implemented. Until OD-NEW-2 is resolved, the coordinator DELETE RLS policy
+is noted as approved in principle but cannot be fully specified without the audit fields.
+Conservative default: DELETE is DENY for all roles pending OD-NEW-2 resolution.
+
+---
+
+### PD-D3 - Comment Mutability
+
+**Source:** DATABASE.md
+**Status: OWNER APPROVED (2026-10-18)**
+**Decision:**
+- Comments are immutable after creation.
+- No editing or deletion is permitted for any role, including coordinator and administrator.
+- Corrections must be submitted as new follow-up comments.
+- No moderation exception or retention policy exists for MVP. If one becomes necessary,
+  it must be documented as a separate owner-approved decision before implementation.
+
+**Schema impact:**
+- The updated_at column is REMOVED from report_comments. It has no purpose if comments
+  cannot be edited.
+- Trigger T1 (fn_set_updated_at) no longer applies to report_comments. It applies to
+  profiles and reports only.
+- RLS: UPDATE and DELETE on report_comments are DENY for all roles.
+
+---
+
+### PD-R1 - Technician Visibility Scope
+
+**Source:** ROLES.md
+**Status: OWNER APPROVED (2026-10-18)**
+**Decision:** Technicians may access only reports assigned to them. General access to
+other technicians' reports is not granted.
+
+**Scope definition — "assigned to them":**
+A technician may access a report if they have at least one assignment record for that
+report with status NOT equal to declined. This covers:
+- Active assignments (assigned, in_progress, on_hold)
+- Completed assignments (status: completed) — needed to review their own work logs
+- Reassigned assignments (status: reassigned) — worked on the report before being replaced
+- Cancelled assignments (status: cancelled) — assignment cancelled with the report
+
+Assignments with status declined are EXCLUDED from the visibility rule. A technician
+who only declined an assignment (and never did any work) does not receive visibility
+into that report. See OD-NEW-4 for the formal gap record.
+
+**Access to related records:**
+When a technician has report visibility, they also have access to:
+- report_attachments for that report
+- report_status_history for that report
+- report_comments for that report
+- verifications for that report (read only)
+
+For work_logs: technicians see only their own work_logs (linked to their own assignments).
+They do not see other technicians' work_logs on the same report.
+
+For assignments: technicians see only their own assignment records, not other technicians'
+assignment records for the same report.
+
+**Reassignment handling:**
+When a technician is reassigned (their assignment.status changes to reassigned), they
+retain read-only access to the report. This allows them to review their own prior work
+logs and the report context for accountability purposes.
+
+**RLS predicate (pseudocode):**
+Technician can view a report if:
+  EXISTS (SELECT 1 FROM assignments
+          WHERE assignments.report_id = reports.id
+          AND assignments.technician_id = auth.uid()
+          AND assignments.status != 'declined')
+
+**Schema gap — see OD-NEW-4:**
+The declined exclusion is documented as the intended policy. Owner confirmation
+that this exclusion is correct would fully close OD-NEW-4.
+
+---
+
+### PD-R2 - Technician Ability to Decline Assignment
+
+**Source:** ROLES.md
+**Status: OWNER APPROVED (2026-10-18)**
+**Decision:**
+- Technicians may decline an assignment. A reason is required.
+- The declined assignment record is preserved (not deleted or overwritten).
+- The coordinator is responsible for arranging reassignment after a decline.
+- Declined assignments are non-active. They cannot receive work logs or status updates.
+
+**Enum change — APPROVED:**
+The assignment_status enum is extended with the value declined.
+declined is a non-active, terminal-like status for the assignment record.
+Non-active assignment statuses: declined, cancelled, reassigned, completed.
+Active assignment statuses: assigned, in_progress, on_hold.
+
+**Guard against further work on declined assignments:**
+- work_logs INSERT is blocked: the RLS policy checks assignment.status != 'declined'.
+- assignment status UPDATE is blocked once status = declined (no further transitions from declined).
+- Declined assignments are excluded from the technician visibility rule (PD-R1).
+
+**Schema gap — OD-NEW-3:**
+No existing field in the assignments table stores the technician's decline reason:
+- assignments.notes is for coordinator notes to the technician, not technician responses.
+- report_status_history records report-level status transitions, not assignment-level events.
+- No assignment_status_history table exists.
+
+Until OD-NEW-3 is resolved, the decline reason cannot be reliably stored or audited.
+Options (requiring separate owner decision):
+1. Add a decline_reason TEXT column to the assignments table.
+2. Add an assignment_status_history table for all assignment-level events.
+3. Record the reason via application log only (weakest audit trail).
+
+The declined enum value is added to the schema in this phase.
+The reason storage mechanism is deferred to OD-NEW-3.
+
+---
+
+### PD-R6 - Administrator and Management as Reporters
+
+**Source:** ROLES.md
+**Status: OWNER APPROVED (2026-10-18)**
+**Decision:** All five authenticated application roles may submit maintenance reports:
+student_personnel, coordinator, technician, administrator, and management.
+
+**Scope — report submission only:**
+This decision grants INSERT permission on the reports table to administrator and management.
+It does NOT grant:
+- Access to all reports (each role retains its existing SELECT scope).
+- Assignment authority (coordinator only).
+- Verification authority (coordinator only, subject to PD-R4).
+- Role management (administrator only).
+- Any other operational permissions beyond report submission.
+
+**Interaction with PD-R4:**
+A coordinator who submits a report cannot verify that report (PD-R4 preserved).
+This applies even when the coordinator is submitting as an operational user.
+The reports.reporter_id is set to auth.uid() regardless of the submitting role.
+
+**RLS impact:**
+reports INSERT policy changes from ALLOW for student_personnel, coordinator, technician
+to ALLOW for ALL authenticated roles (all five roles).
+
+---
+
+## Phase 3C Schema Gaps
+
+### OD-NEW-2 - Attachment Deletion Audit Mechanism
+
+**Source:** Phase 3C review (identified during PD-D2 reconciliation)
+**Status: OPEN**
+**Context:** PD-D2 approves coordinator-controlled attachment deletion that must be authorized
+and auditable. The current report_attachments schema has no columns to record who deleted
+an attachment and when.
+
+**Options:**
+1. Soft-delete: Add deleted_at TIMESTAMPTZ and deleted_by UUID FK -> profiles(id) to
+   report_attachments. Records are hidden from normal queries but retained in the database.
+   Storage cleanup proceeds asynchronously. Recommended.
+2. Hard-delete with separate audit table: A report_attachment_deletions table records
+   the deletion event before the row is removed.
+3. Hard-delete only: Application logs capture the deletion. No database audit trail.
+
+**Recommendation:** Option 1 (soft-delete). This preserves the database record, supports
+audit queries, and decouples the Storage cleanup from the user-facing operation.
+
+**Blocks:** Coordinator DELETE RLS finalization and Storage cleanup implementation.
+
+**Decision required:** How should attachment deletions be recorded and audited?
+
+---
+
+### OD-NEW-3 - Assignment Decline Reason Storage
+
+**Source:** Phase 3C review (identified during PD-R2 reconciliation)
+**Status: OPEN**
+**Context:** PD-R2 approves technician assignment decline with a required reason.
+The existing schema has no field to store this reason:
+- assignments.notes is coordinator notes (not technician response).
+- report_status_history records report-level transitions, not assignment events.
+- No assignment_status_history table exists.
+
+**Options:**
+1. Add decline_reason TEXT (nullable) to the assignments table. Simple. Set when
+   status changes to declined. Recommended.
+2. Add an assignment_status_history table for all assignment-level status events.
+   More complete audit trail but more complex.
+3. Record reason in application logs only. No database audit trail. Weakest option.
+
+**Recommendation:** Option 1 (add decline_reason to assignments). This is minimal,
+consistent with the table's purpose, and does not require a new table.
+
+**Note:** The declined enum value is already added to assignment_status.
+This gap only affects the storage of the reason, not the status itself.
+
+**Blocks:** Complete audit trail for declined assignments.
+
+**Decision required:** How should the assignment decline reason be stored?
+
+---
+
+### OD-NEW-4 - Technician Visibility for Declined-Only Assignments
+
+**Source:** Phase 3C review (identified during PD-R1 reconciliation)
+**Status: OPEN**
+**Context:** PD-R1 approves a visibility rule where technicians see reports they are
+assigned to (any non-declined assignment). The question is whether a technician who
+ONLY declined an assignment (and therefore never did any work) should see the report.
+
+**Current implementation decision:** Declined assignments are excluded from the visibility
+predicate. A technician with only a declined assignment record does not see the report.
+
+**Rationale:** A declined technician has no work logs, no contributions, and no accountability
+requirement for the report. Restricting visibility is the least-privilege choice.
+
+**Decision required:** Confirm or override the exclusion of declined assignments from
+technician report visibility.
 
 ---
 
 ## Decisions Affecting the Database Schema
+
+These must be resolved before migration scripts are written (if not already approved).
 
 ### PD-D1 - Location Table Structure
 
@@ -301,9 +447,6 @@ Status transition map: All coordinator-to-cancelled transitions are now finalize
 Context: The current locations table stores building_name, floor, and room in a
 single flat table. This is simple and sufficient for MVP needs.
 
-**Migration impact:** If this decision is delayed, migration proceeds with the single
-locations table. This can be refactored later if hierarchical queries are needed.
-
 **Does not block migration.** Proceed with single table unless owner decides to split.
 
 ---
@@ -311,44 +454,16 @@ locations table. This can be refactored later if hierarchical queries are needed
 ### PD-D2 - Attachment Mutability
 
 **Source:** DATABASE.md
-**Status: RECOMMENDED**
-**Recommendation:** Treat attachments as immutable after upload.
-
-Context: Once a photo attachment is uploaded, should it be editable or deleteable?
-
-Options:
-1. Immutable: No edits or deletes after upload. Strongest audit integrity. Recommended.
-2. Soft-delete: Mark deleted in database but retain in storage.
-3. Hard-delete: Remove both database record and storage file.
-
-Recommendation: Immutable for MVP. If removal is absolutely needed later, only
-administrator should be able to soft-delete with a log entry.
-
-**Blocks RLS migration:** UPDATE and DELETE policies on report_attachments cannot be
-finalized without this decision. Currently both are DENY for all roles (conservative default).
-
-**Decision required:** Can attachments be deleted or edited after upload? If yes, who can?
+**Status: OWNER APPROVED (2026-10-18)**
+See Phase 3C Owner-Approved Decisions section above.
 
 ---
 
 ### PD-D3 - Comment Mutability
 
 **Source:** DATABASE.md
-**Status: RECOMMENDED**
-**Recommendation:** Allow edits by the original author. Prohibit hard deletes.
-
-Context: Once posted, can comments be edited or deleted?
-
-Options:
-1. Edits allowed by author, deletes not allowed. updated_at column is useful. Recommended.
-2. Neither edits nor deletes (append-only comments). Remove updated_at.
-3. Both edits and deletes allowed.
-
-**Blocks RLS migration:** UPDATE and DELETE policies on report_comments cannot be
-finalized. Currently both are DENY (conservative default). If edits are disallowed,
-updated_at should be removed from the schema.
-
-**Decision required:** Can comments be edited after creation? Can they be deleted?
+**Status: OWNER APPROVED (2026-10-18)**
+See Phase 3C Owner-Approved Decisions section above.
 
 ---
 
@@ -357,16 +472,7 @@ updated_at should be removed from the schema.
 **Source:** DATABASE.md
 **Status: RECOMMENDED**
 **Recommendation:** Application-level notification creation.
-
-Options:
-1. Application-level server actions (recommended).
-2. Database triggers.
-3. Hybrid.
-
-**Does not block migration.** The notifications table schema is the same either way.
-Affects only how the INSERT RLS policy is configured (service role vs. user-context insert).
-
-**Decision required:** Should notifications be created by database triggers or application code?
+**Does not block migration.**
 
 ---
 
@@ -374,9 +480,8 @@ Affects only how the INSERT RLS policy is configured (service role vs. user-cont
 
 **Source:** DATABASE.md
 **Status: RECOMMENDED**
-**Recommendation:** Keep confirmed_priority nullable. NULL clearly signals unreviewed status.
-
-**Does not block migration.** Proceed with nullable column. This can be changed later.
+**Recommendation:** Keep confirmed_priority nullable.
+**Does not block migration.**
 
 ---
 
@@ -384,15 +489,8 @@ Affects only how the INSERT RLS policy is configured (service role vs. user-cont
 
 **Source:** New
 **Status: OPEN**
-**Context:** RESTRICT foreign keys prevent deletion of profiles referenced by historical
-records. Hard deletion requires anonymizing PII in all referenced records first.
-
-Options:
-1. Soft-delete only (is_active = false). Recommended.
-2. Hard-delete with PII anonymization.
-3. Hard-delete not supported.
-
-**Does not block migration for MVP.** Proceed with RESTRICT + soft-deactivation.
+**Recommendation:** Soft-delete only for MVP. Hard-delete not supported.
+**Does not block migration.**
 
 ---
 
@@ -401,9 +499,7 @@ Options:
 **Source:** New
 **Status: RECOMMENDED**
 **Recommendation:** Add created_at at minimum.
-
-**Does not block migration.** Can be added or omitted. Will proceed without timestamps
-unless owner confirms.
+**Does not block migration.**
 
 ---
 
@@ -411,12 +507,8 @@ unless owner confirms.
 
 **Source:** New
 **Status: RECOMMENDED**
-**Recommendation:** Add UNIQUE constraint on (building_name, floor, room).
-Note: PostgreSQL treats NULLs in unique indexes as distinct, so multiple outdoor
-locations with NULL floor and room would each be permitted.
-
-**Does not block migration.** Can proceed either way. Will proceed without the constraint
-unless owner confirms, to avoid a potentially unexpected uniqueness error.
+**Recommendation:** Add UNIQUE on (building_name, floor, room).
+**Does not block migration.**
 
 ---
 
@@ -425,33 +517,16 @@ unless owner confirms, to avoid a potentially unexpected uniqueness error.
 ### PD-R1 - Technician Visibility Scope
 
 **Source:** ROLES.md
-**Status: RECOMMENDED**
-**Recommendation:** Restrict technicians to their own assigned reports only.
-
-**Blocks RLS migration:** The SELECT policy for technician on reports, assignments,
-report_status_history, report_comments, report_attachments, work_logs, and verifications
-cannot be finalized without this decision. The proposed conservative default is
-own-assignment-only. If the owner prefers all-reports visibility, the policies change.
-
-**Decision required:** Can technicians view reports assigned to other technicians?
+**Status: OWNER APPROVED (2026-10-18)**
+See Phase 3C Owner-Approved Decisions section above.
 
 ---
 
 ### PD-R2 - Technician Ability to Decline Assignment
 
 **Source:** ROLES.md
-**Status: OPEN**
-**Context:** If technicians can decline, the assignment_status enum needs a declined value
-and the workflow needs a decline/reassignment path.
-
-Options:
-1. Allow decline with required reason. Triggers coordinator reassignment.
-2. No decline. Coordinator handles issues.
-
-**Blocks enum definition and workflow:** If declined is added to assignment_status, it
-changes the migration. If not, the enum is final.
-
-**Decision required:** Can technicians decline an assignment?
+**Status: OWNER APPROVED (2026-10-18)**
+See Phase 3C Owner-Approved Decisions section above.
 
 ---
 
@@ -459,7 +534,7 @@ changes the migration. If not, the enum is final.
 
 **Source:** ROLES.md
 **Status: RESOLVED BY PD-W1**
-Technicians may initiate work holds per the PD-W1 owner decision. No further input needed.
+Technicians may initiate work holds per the PD-W1 owner decision.
 
 ---
 
@@ -467,7 +542,7 @@ Technicians may initiate work holds per the PD-W1 owner decision. No further inp
 
 **Source:** ROLES.md, SECURITY.md
 **Status: OWNER APPROVED (2026-10-18)**
-See the Phase 3B Owner-Approved Decisions section above.
+See Phase 3B Owner-Approved Decisions section above.
 
 ---
 
@@ -475,26 +550,15 @@ See the Phase 3B Owner-Approved Decisions section above.
 
 **Source:** ROLES.md
 **Status: RESOLVED BY PD-W2**
-Reporters may cancel at submitted or under_review per the PD-W2 owner decision.
-No further input needed.
+Reporters may cancel at submitted or under_review per PD-W2.
 
 ---
 
 ### PD-R6 - Administrator and Management as Reporters
 
 **Source:** ROLES.md
-**Status: OPEN**
-**Context:** ROLES.md marks report submission as not permitted for administrator and
-management. Should these roles be able to submit reports?
-
-Options:
-1. Keep as not permitted (current design).
-2. Allow these roles to also submit reports.
-
-**Blocks INSERT RLS policy on reports** for administrator and management.
-Currently DENY. Conservative default will be maintained until owner decides.
-
-**Decision required:** Should administrator and management roles be able to submit reports?
+**Status: OWNER APPROVED (2026-10-18)**
+See Phase 3C Owner-Approved Decisions section above.
 
 ---
 
@@ -504,7 +568,6 @@ Currently DENY. Conservative default will be maintained until owner decides.
 
 **Source:** SECURITY.md
 **Status: OPEN**
-Options: Supabase auth-level, Next.js middleware, or both.
 **Does not block database migration.**
 
 ---
@@ -539,7 +602,7 @@ Options: Supabase auth-level, Next.js middleware, or both.
 
 **Source:** WORKFLOW.md
 **Status: OWNER APPROVED (2026-10-18)**
-See Phase 3B Owner-Approved Decisions above.
+See Phase 3B Owner-Approved Decisions section above.
 
 ---
 
@@ -547,7 +610,7 @@ See Phase 3B Owner-Approved Decisions above.
 
 **Source:** WORKFLOW.md
 **Status: OWNER APPROVED (2026-10-18)**
-See Phase 3B Owner-Approved Decisions above.
+See Phase 3B Owner-Approved Decisions section above.
 
 ---
 
@@ -555,33 +618,15 @@ See Phase 3B Owner-Approved Decisions above.
 
 **Source:** WORKFLOW.md
 **Status: OWNER APPROVED (2026-10-18)**
-See Phase 3B Owner-Approved Decisions above.
+See Phase 3B Owner-Approved Decisions section above.
 
 ---
 
 ### PD-W4 - Assignment Handling on Cancellation
 
 **Source:** WORKFLOW.md
-**Status: RECOMMENDED**
-**Recommendation:** Mark the active assignment as cancelled (assignments.status = cancelled).
-Notify the assigned technician.
-
-Context: If a report is cancelled while assigned or in_progress, what happens to the
-existing assignment record?
-
-Options:
-1. Mark assignment as cancelled (recommended). Technician is notified.
-2. Leave unchanged (inconsistent state risk).
-
-Note: PD-W3 already requires that the technician receive a report_cancelled notification
-when a coordinator cancels an in-progress or assigned report. The assignment.status
-update to cancelled is the matching data operation.
-
-**Blocks application workflow logic** but does not change the database schema, since
-cancelled is already a valid assignment_status enum value.
-
-**Decision required:** Should the assignment be explicitly marked cancelled when its
-report is cancelled?
+**Status: OWNER APPROVED (2026-10-18)**
+See Phase 3B Owner-Approved Decisions section above.
 
 ---
 
@@ -589,15 +634,7 @@ report is cancelled?
 
 **Source:** WORKFLOW.md
 **Status: OPEN**
-**Context:** Without a limit, a report can cycle through reopened and in_progress indefinitely.
-
-Options:
-1. No limit. Coordinators escalate manually.
-2. Alert after N failed verifications (recommended: 3).
-3. Hard database limit.
-
 **Does not block migration.** No schema change required for the alerting approach.
-If a counter column is desired, it would be an additional column on reports.
 
 ---
 
@@ -605,12 +642,11 @@ If a counter column is desired, it would be an additional column on reports.
 
 **Source:** WORKFLOW.md
 **Status: RECOMMENDED**
-**Recommendation:** Both paths allowed. Direct submitted to assigned permitted for obvious cases.
-
-**Does not block migration.** Both paths are already encoded in the status transition map.
+**Recommendation:** Both paths allowed. Direct submitted to assigned permitted.
+**Does not block migration.**
 
 ---
 
-*Phase 3B update. Approved decisions incorporated 2026-10-18.*
-*See PHASE_3B_REVIEW.md for change summary.*
+*Phase 3C update 2026-10-18. Approved decisions incorporated.*
+*See PHASE_3C_REVIEW.md for complete Phase 3C change summary.*
 *All OPEN and RECOMMENDED decisions still require explicit owner approval.*
