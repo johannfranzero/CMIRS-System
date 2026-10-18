@@ -31,8 +31,8 @@ FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
 -- =============================================================================
--- 2. Trigger T2: Report Number Generation (APPROVED PD-D4)
--- Formats sequence value as 'RPT-000001' before insert
+-- 2. Trigger T2: Report Number Generation (APPROVED PD-D4, Remediated R4)
+-- Formats sequence value as 'RPT-000001' before insert unconditionally
 -- =============================================================================
 CREATE OR REPLACE FUNCTION public.generate_report_number()
 RETURNS TRIGGER
@@ -41,9 +41,8 @@ SECURITY DEFINER
 SET search_path = public, auth, pg_temp
 AS $$
 BEGIN
-  IF NEW.report_number IS NULL OR NEW.report_number = '' THEN
-    NEW.report_number := 'RPT-' || LPAD(nextval('report_number_seq')::TEXT, 6, '0');
-  END IF;
+  -- Unconditionally assign report number from sequence regardless of client input (Remediated R4)
+  NEW.report_number := 'RPT-' || LPAD(nextval('public.report_number_seq')::TEXT, 6, '0');
   RETURN NEW;
 END;
 $$;
@@ -53,6 +52,30 @@ CREATE TRIGGER trg_reports_report_number
 BEFORE INSERT ON public.reports
 FOR EACH ROW
 EXECUTE FUNCTION public.generate_report_number();
+
+-- Protect report_number and reporter_id from modification on UPDATE (Remediated R4)
+CREATE OR REPLACE FUNCTION public.prevent_report_immutable_col_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+BEGIN
+  IF OLD.report_number IS DISTINCT FROM NEW.report_number THEN
+    RAISE EXCEPTION 'report_number is immutable and cannot be modified.';
+  END IF;
+  IF OLD.reporter_id IS DISTINCT FROM NEW.reporter_id THEN
+    RAISE EXCEPTION 'reporter_id is immutable and cannot be modified.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_reports_immutable_cols ON public.reports;
+CREATE TRIGGER trg_reports_immutable_cols
+BEFORE UPDATE ON public.reports
+FOR EACH ROW
+EXECUTE FUNCTION public.prevent_report_immutable_col_update();
 
 -- =============================================================================
 -- 3. Trigger T3: Report Status History Safety-Net Audit

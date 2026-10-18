@@ -5,56 +5,121 @@
 -- 1. Extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- 2. Custom Enums
-CREATE TYPE user_role AS ENUM (
-  'student_personnel',
-  'coordinator',
-  'technician',
-  'administrator',
-  'management'
-);
+-- 2. Custom Enums (Remediated R6: Idempotent and compatibility-verified)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+    CREATE TYPE user_role AS ENUM (
+      'student_personnel',
+      'coordinator',
+      'technician',
+      'administrator',
+      'management'
+    );
+  ELSE
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_enum e
+      JOIN pg_type t ON e.enumtypid = t.oid
+      WHERE t.typname = 'user_role' AND e.enumlabel = 'student_personnel'
+    ) THEN
+      RAISE EXCEPTION 'Pre-existing type user_role is incompatible with approved CMIRS schema.';
+    END IF;
+  END IF;
+END $$;
 
-CREATE TYPE report_status AS ENUM (
-  'submitted',
-  'under_review',
-  'assigned',
-  'in_progress',
-  'on_hold',
-  'completed',
-  'verified',
-  'reopened',
-  'cancelled'
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'report_status') THEN
+    CREATE TYPE report_status AS ENUM (
+      'submitted',
+      'under_review',
+      'assigned',
+      'in_progress',
+      'on_hold',
+      'completed',
+      'verified',
+      'reopened',
+      'cancelled'
+    );
+  ELSE
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_enum e
+      JOIN pg_type t ON e.enumtypid = t.oid
+      WHERE t.typname = 'report_status' AND e.enumlabel = 'submitted'
+    ) THEN
+      RAISE EXCEPTION 'Pre-existing type report_status is incompatible with approved CMIRS schema.';
+    END IF;
+  END IF;
+END $$;
 
-CREATE TYPE priority_level AS ENUM (
-  'low',
-  'medium',
-  'high',
-  'critical'
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'priority_level') THEN
+    CREATE TYPE priority_level AS ENUM (
+      'low',
+      'medium',
+      'high',
+      'critical'
+    );
+  ELSE
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_enum e
+      JOIN pg_type t ON e.enumtypid = t.oid
+      WHERE t.typname = 'priority_level' AND e.enumlabel = 'critical'
+    ) THEN
+      RAISE EXCEPTION 'Pre-existing type priority_level is incompatible with approved CMIRS schema.';
+    END IF;
+  END IF;
+END $$;
 
-CREATE TYPE assignment_status AS ENUM (
-  'assigned',
-  'in_progress',
-  'on_hold',
-  'completed',
-  'reassigned',
-  'cancelled',
-  'declined'
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'assignment_status') THEN
+    CREATE TYPE assignment_status AS ENUM (
+      'assigned',
+      'in_progress',
+      'on_hold',
+      'completed',
+      'reassigned',
+      'cancelled',
+      'declined'
+    );
+  ELSE
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_enum e
+      JOIN pg_type t ON e.enumtypid = t.oid
+      WHERE t.typname = 'assignment_status' AND e.enumlabel = 'declined'
+    ) THEN
+      RAISE EXCEPTION 'Pre-existing type assignment_status is incompatible with approved CMIRS schema.';
+    END IF;
+  END IF;
+END $$;
 
-CREATE TYPE notification_type AS ENUM (
-  'report_submitted',
-  'report_assigned',
-  'status_changed',
-  'priority_changed',
-  'comment_added',
-  'verification_required',
-  'verification_complete',
-  'verification_failed',
-  'report_reassigned',
-  'report_cancelled'
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'notification_type') THEN
+    CREATE TYPE notification_type AS ENUM (
+      'report_submitted',
+      'report_assigned',
+      'status_changed',
+      'priority_changed',
+      'comment_added',
+      'verification_required',
+      'verification_complete',
+      'verification_failed',
+      'report_reassigned',
+      'report_cancelled'
+    );
+  ELSE
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_enum e
+      JOIN pg_type t ON e.enumtypid = t.oid
+      WHERE t.typname = 'notification_type' AND e.enumlabel = 'report_submitted'
+    ) THEN
+      RAISE EXCEPTION 'Pre-existing type notification_type is incompatible with approved CMIRS schema.';
+    END IF;
+  END IF;
+END $$;
 
 -- 3. Sequences
 -- Concurrency-safe report number sequence for RPT-000001 format (APPROVED PD-D4)

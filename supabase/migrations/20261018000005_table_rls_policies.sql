@@ -136,11 +136,14 @@ USING (
 );
 
 -- All five authenticated roles may submit reports (APPROVED PD-R6)
+-- R2 Remediation: Restrict initial report values to submitted status and NULL confirmed priority
 DROP POLICY IF EXISTS "reports_insert" ON public.reports;
 CREATE POLICY "reports_insert" ON public.reports
 FOR INSERT TO authenticated
 WITH CHECK (
   reporter_id = auth.uid()
+  AND status = 'submitted'
+  AND confirmed_priority IS NULL
 );
 
 -- Coordinators may update non-terminal reports (APPROVED PD-W3)
@@ -216,9 +219,34 @@ WITH CHECK (
   public.get_user_role() = 'coordinator'
 );
 
--- Technician-constrained assignment updates: work status transitions and decline
+-- R3 Remediation: Separate technician decline and active work transitions
+
+-- Policy 1: Decline transition strictly from 'assigned' status (APPROVED PD-R2, OD-NEW-3, OD-REC-1)
 DROP POLICY IF EXISTS "assignments_update_technician" ON public.assignments;
-CREATE POLICY "assignments_update_technician" ON public.assignments
+DROP POLICY IF EXISTS "assignments_update_technician_decline" ON public.assignments;
+CREATE POLICY "assignments_update_technician_decline" ON public.assignments
+FOR UPDATE TO authenticated
+USING (
+  public.get_user_role() = 'technician'
+  AND technician_id = auth.uid()
+  AND status = 'assigned'
+)
+WITH CHECK (
+  public.get_user_role() = 'technician'
+  AND technician_id = auth.uid()
+  AND status = 'declined'
+  AND decline_reason IS NOT NULL
+  AND btrim(decline_reason) != ''
+  -- Protect coordinator-authored and assignment metadata fields
+  AND report_id = (SELECT a.report_id FROM public.assignments a WHERE a.id = assignments.id)
+  AND assigned_by = (SELECT a.assigned_by FROM public.assignments a WHERE a.id = assignments.id)
+  AND assigned_at = (SELECT a.assigned_at FROM public.assignments a WHERE a.id = assignments.id)
+  AND notes IS NOT DISTINCT FROM (SELECT a.notes FROM public.assignments a WHERE a.id = assignments.id)
+);
+
+-- Policy 2: Active work transitions (in_progress, on_hold, completed) (APPROVED PD-W1)
+DROP POLICY IF EXISTS "assignments_update_technician_work" ON public.assignments;
+CREATE POLICY "assignments_update_technician_work" ON public.assignments
 FOR UPDATE TO authenticated
 USING (
   public.get_user_role() = 'technician'
@@ -228,13 +256,13 @@ USING (
 WITH CHECK (
   public.get_user_role() = 'technician'
   AND technician_id = auth.uid()
-  AND (
-    -- Decline: transition from assigned to declined with non-empty reason (APPROVED OD-REC-1)
-    (status = 'declined' AND decline_reason IS NOT NULL AND btrim(decline_reason) != '')
-    OR
-    -- Technician work execution transitions (APPROVED PD-W1)
-    (status IN ('in_progress', 'on_hold', 'completed'))
-  )
+  AND status IN ('in_progress', 'on_hold', 'completed')
+  AND decline_reason IS NULL
+  -- Protect coordinator-authored and assignment metadata fields
+  AND report_id = (SELECT a.report_id FROM public.assignments a WHERE a.id = assignments.id)
+  AND assigned_by = (SELECT a.assigned_by FROM public.assignments a WHERE a.id = assignments.id)
+  AND assigned_at = (SELECT a.assigned_at FROM public.assignments a WHERE a.id = assignments.id)
+  AND notes IS NOT DISTINCT FROM (SELECT a.notes FROM public.assignments a WHERE a.id = assignments.id)
 );
 
 -- =============================================================================
@@ -408,8 +436,21 @@ USING (
   recipient_id = auth.uid()
 );
 
+-- R5 Remediation: Restrict notification updates to is_read only
 DROP POLICY IF EXISTS "notifications_update_recipient" ON public.notifications;
 CREATE POLICY "notifications_update_recipient" ON public.notifications
 FOR UPDATE TO authenticated
 USING (recipient_id = auth.uid())
-WITH CHECK (recipient_id = auth.uid());
+WITH CHECK (
+  recipient_id = auth.uid()
+  AND id = (SELECT n.id FROM public.notifications n WHERE n.id = notifications.id)
+  AND type = (SELECT n.type FROM public.notifications n WHERE n.id = notifications.id)
+  AND title = (SELECT n.title FROM public.notifications n WHERE n.id = notifications.id)
+  AND message = (SELECT n.message FROM public.notifications n WHERE n.id = notifications.id)
+  AND report_id IS NOT DISTINCT FROM (SELECT n.report_id FROM public.notifications n WHERE n.id = notifications.id)
+  AND created_at = (SELECT n.created_at FROM public.notifications n WHERE n.id = notifications.id)
+);
+
+-- R5 Remediation: Column-level UPDATE privilege restriction for defense-in-depth
+REVOKE UPDATE ON public.notifications FROM authenticated;
+GRANT UPDATE (is_read) ON public.notifications TO authenticated;

@@ -76,16 +76,22 @@ CREATE POLICY "storage_attachments_insert" ON storage.objects
 FOR INSERT TO authenticated
 WITH CHECK (
   bucket_id = 'report-attachments'
-  -- Finding 1 Mitigation: strict regex guard before casting folder segment to UUID
-  AND name ~ '^reports/[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}\.[a-zA-Z0-9]+$'
+  -- R1 Remediation: Strict canonical UUID regex validation for both report_id and attachment_id
+  AND name ~ '^reports/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(jpe?g|png|webp)$'
   AND (
     -- Coordinators may upload to any non-terminal report
     (
       public.get_user_role() = 'coordinator'
       AND EXISTS (
         SELECT 1 FROM public.reports r
-        WHERE r.id = (storage.foldername(name))[2]::uuid
-          AND r.status NOT IN ('verified', 'cancelled')
+        WHERE r.id = (
+          CASE 
+            WHEN name ~ '^reports/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(jpe?g|png|webp)$'
+            THEN (storage.foldername(name))[2]::uuid
+            ELSE NULL
+          END
+        )
+        AND r.status NOT IN ('verified', 'cancelled')
       )
     )
     OR
@@ -94,9 +100,15 @@ WITH CHECK (
       public.get_user_role() = 'student_personnel'
       AND EXISTS (
         SELECT 1 FROM public.reports r
-        WHERE r.id = (storage.foldername(name))[2]::uuid
-          AND r.reporter_id = auth.uid()
-          AND r.status IN ('submitted', 'under_review')
+        WHERE r.id = (
+          CASE 
+            WHEN name ~ '^reports/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(jpe?g|png|webp)$'
+            THEN (storage.foldername(name))[2]::uuid
+            ELSE NULL
+          END
+        )
+        AND r.reporter_id = auth.uid()
+        AND r.status IN ('submitted', 'under_review')
       )
     )
     OR
@@ -105,9 +117,15 @@ WITH CHECK (
       public.get_user_role() = 'technician'
       AND EXISTS (
         SELECT 1 FROM public.assignments a
-        WHERE a.report_id = (storage.foldername(name))[2]::uuid
-          AND a.technician_id = auth.uid()
-          AND a.status IN ('assigned', 'in_progress', 'on_hold')
+        WHERE a.report_id = (
+          CASE 
+            WHEN name ~ '^reports/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(jpe?g|png|webp)$'
+            THEN (storage.foldername(name))[2]::uuid
+            ELSE NULL
+          END
+        )
+        AND a.technician_id = auth.uid()
+        AND a.status IN ('assigned', 'in_progress', 'on_hold')
       )
     )
   )
@@ -115,8 +133,14 @@ WITH CHECK (
   AND (
     SELECT COUNT(*)
     FROM public.report_attachments ra
-    WHERE ra.report_id = (storage.foldername(name))[2]::uuid
-      AND ra.deleted_at IS NULL
+    WHERE ra.report_id = (
+      CASE 
+        WHEN name ~ '^reports/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(jpe?g|png|webp)$'
+        THEN (storage.foldername(name))[2]::uuid
+        ELSE NULL
+      END
+    )
+    AND ra.deleted_at IS NULL
   ) < 5
 );
 
