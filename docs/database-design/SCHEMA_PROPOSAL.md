@@ -1,13 +1,14 @@
 # CMIRS - Schema Proposal
 
-> **Status: PROPOSAL - Not approved. Not implemented.**
-> Phase 3A database planning. Do not execute SQL. Do not apply migrations. Wait for owner review.
+> **Status: PROPOSAL - Updated Phase 3B (2026-10-18). Not approved for migration.**
+> Reflects seven owner-approved decisions. Do not execute SQL. Do not apply migrations.
 
 ## Table of Contents
 
 - [Purpose and Scope](#purpose-and-scope)
 - [Authoritative Sources](#authoritative-sources)
 - [Confirmed Requirements](#confirmed-requirements)
+- [Phase 3B Decisions Applied](#phase-3b-decisions-applied)
 - [Proposed Enums](#proposed-enums)
 - [Proposed Tables](#proposed-tables)
 - [Relationships and Cardinalities](#relationships-and-cardinalities)
@@ -29,6 +30,7 @@ Complete PostgreSQL schema proposal for CMIRS. Grounded in Phase 0 documentation
 - docs/WORKFLOW.md - lifecycle, status transitions, notifications
 - docs/SECURITY.md - security principles, RLS overview, audit requirements
 - README.md - confirmed decisions D1-D8
+- docs/database-design/OPEN_DECISIONS.md - owner-approved decisions D1-D8 and Phase 3B
 
 **No tables, enums, triggers, functions, or RLS policies have been created. Planning only.**
 
@@ -61,7 +63,7 @@ Confirmed decisions from README.md treated as hard requirements:
 6. Verifications stored per attempt. Multiple records per report on reopen cycles.
 7. Work logs are append-only.
 8. Notifications are in-app only. notifications table stores all records.
-9. Audit tables (report_status_history, verifications, work_logs) are append-only.
+9. Audit tables (report_status_history, verifications, work_logs, role_change_audit) are append-only.
 10. Photo attachments in Supabase Storage (private bucket). Database stores metadata and path only.
 11. Categories and locations use soft-deactivation (is_active = false).
 12. Referential integrity enforced via foreign keys at database level.
@@ -71,11 +73,25 @@ Confirmed decisions from README.md treated as hard requirements:
 
 ---
 
+## Phase 3B Decisions Applied
+
+The following owner decisions from OPEN_DECISIONS.md Phase 3B section are reflected in this document:
+
+| Decision | Change to Schema |
+|---|---|
+| OD-NEW-1 APPROVED | role_change_audit table included (was pending approval) |
+| PD-D4 APPROVED | T2 trigger description finalized: RPT-000001 format via PostgreSQL sequence |
+| PD-D5 APPROVED | report_attachments: added chk_file_size constraint; updated key notes with 5-file count limit and 10 MB limit; multi-layer validation described |
+| PD-R4 APPROVED | verifications: updated key notes to add reporter_id check alongside D2 technician check |
+| PD-W1 APPROVED | Status transition map: in_progress to on_hold actor updated to Technician or Coordinator |
+| PD-W2 APPROVED | Status transition map: submitted and under_review to cancelled actor updated to Reporter or Coordinator |
+| PD-W3 APPROVED | Status transition map: all non-terminal to cancelled actor confirmed as Coordinator for all remaining stages |
+
+---
+
 ## Proposed Enums
 
 ### user_role
-
-Maps directly to DATABASE.md. No changes proposed.
 
 Values: student_personnel (default), coordinator, technician, administrator, management.
 
@@ -89,11 +105,9 @@ Values: student_personnel (default), coordinator, technician, administrator, man
 
 ### report_status
 
-Maps to DATABASE.md and WORKFLOW.md. No changes.
-
 Values: submitted, under_review, assigned, in_progress, on_hold, completed, verified, reopened, cancelled.
 
-Terminal states: verified, cancelled.
+Terminal states: verified, cancelled. No transitions permitted from these states.
 
 ### priority_level
 
@@ -103,7 +117,7 @@ Values: low, medium, high, critical.
 
 Values: assigned, in_progress, completed, reassigned, cancelled.
 
-Note (PD-R2): accepted and declined intentionally omitted pending owner decision.
+Note (PD-R2 OPEN): accepted and declined intentionally omitted pending owner decision.
 Do not extend this enum without approval.
 
 ### notification_type
@@ -144,11 +158,9 @@ Key notes:
 ### role_change_audit
 
 Purpose: Append-only audit log of every role assignment and change. Required by
-ROLES.md Section Role Change Rules: "Role changes should be logged for audit purposes."
-SECURITY.md Section Auditability lists role assignment/change as a security-relevant audit action.
+ROLES.md Section Role Change Rules and SECURITY.md Section Auditability.
 
-NEW TABLE - not in DATABASE.md. Added to satisfy documented audit requirements.
-Requires owner approval before implementation. See OPEN_DECISIONS.md OD-NEW-1.
+APPROVED (OD-NEW-1, 2026-10-18): This table is included in the schema.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
@@ -179,14 +191,14 @@ Managed by administrators. Deactivated categories remain for historical FK integ
 | description | TEXT | | Optional description |
 | is_active | BOOLEAN | NOT NULL DEFAULT true | Available for new reports |
 
-Notes: No created_at/updated_at in DATABASE.md design. Flagged as PD-D9.
+Notes: No created_at/updated_at in DATABASE.md design. See PD-D9 (RECOMMENDED, not yet decided).
 
 ---
 
 ### locations
 
 Purpose: Campus locations. Single-table design per DATABASE.md.
-PD-D1 open: possible split into buildings and rooms tables.
+PD-D1 (RECOMMENDED): Keep single table unless owner decides to split.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
@@ -197,7 +209,8 @@ PD-D1 open: possible split into buildings and rooms tables.
 | description | TEXT | | Additional location details |
 | is_active | BOOLEAN | NOT NULL DEFAULT true | Available for new reports |
 
-Index on building_name. No uniqueness constraint on (building_name, floor, room). Flagged as PD-D10.
+Index on building_name.
+No uniqueness constraint on (building_name, floor, room). See PD-D10 (RECOMMENDED, not yet decided).
 
 ---
 
@@ -208,7 +221,7 @@ Purpose: Central entity. Records the full lifecycle of each maintenance and inci
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | id | UUID | PK DEFAULT gen_random_uuid() | Report identifier |
-| report_number | TEXT | NOT NULL UNIQUE | Human-readable report number (generated) |
+| report_number | TEXT | NOT NULL UNIQUE | Human-readable report number, generated by T2 |
 | title | TEXT | NOT NULL | Brief issue summary |
 | description | TEXT | NOT NULL | Detailed problem description |
 | category_id | UUID | NOT NULL FK -> categories(id) RESTRICT | Type of maintenance issue |
@@ -225,8 +238,11 @@ Index on confirmed_priority. Index on created_at. Composite index on (status, co
 
 Key notes:
 - is_urgent_hazard: reporter-set boolean, independent from confirmed_priority (D3).
-- confirmed_priority: NULL until coordinator sets it. Nullable intentional (PD-D7 recommendation accepted).
-- report_number: generated by T2. Format pending PD-D4.
+- confirmed_priority: NULL until coordinator sets it. Nullable intentional (PD-D7 recommended).
+- report_number: generated by T2 (APPROVED PD-D4). Format: RPT-000001 via PostgreSQL sequence.
+  The sequence is concurrency-safe; each INSERT receives a unique value.
+  UNIQUE constraint provides final database-level guarantee.
+  report_number is immutable after creation.
 - updated_at trigger T1 applied.
 
 ---
@@ -235,25 +251,32 @@ Key notes:
 
 Purpose: File metadata for optional photo attachments (D4). File content in Supabase Storage (private bucket).
 
+APPROVED (PD-D5, 2026-10-18): Maximum 5 per report, 10 MB per file, JPEG/PNG/WebP only.
+
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | id | UUID | PK DEFAULT gen_random_uuid() | Attachment identifier |
 | report_id | UUID | NOT NULL FK -> reports(id) ON DELETE CASCADE | Associated report |
 | file_path | TEXT | NOT NULL | Path in Supabase Storage |
-| file_name | TEXT | NOT NULL | Original filename |
-| file_size | INTEGER | NOT NULL | File size in bytes |
-| mime_type | TEXT | NOT NULL CHECK (mime_type IN image/jpeg, image/png, image/webp) | MIME type |
+| file_name | TEXT | NOT NULL | Original filename (sanitized) |
+| file_size | INTEGER | NOT NULL, CHECK (file_size > 0 AND file_size <= 10485760) | File size in bytes, max 10 MB |
+| mime_type | TEXT | NOT NULL, CHECK (mime_type IN ('image/jpeg','image/png','image/webp')) | MIME type |
 | uploaded_by | UUID | NOT NULL FK -> profiles(id) RESTRICT | User who uploaded the file |
 | created_at | TIMESTAMPTZ | NOT NULL DEFAULT now() | Upload timestamp |
 
 Index on report_id.
 
 Key notes:
-- 0..* per report (D4). Zero attachments is valid.
+- 0 to 5 per report (D4 preserved: zero attachments valid; owner-approved max 5).
 - ON DELETE CASCADE: application must also clean up Supabase Storage files.
-- chk_mime_type: database-level MIME enforcement from SECURITY.md. Owner must confirm accepted types.
-- PD-D2 open: mutability not decided. No UPDATE/DELETE policy defined yet.
-- PD-D5 open: size/count limits not confirmed. No additional CHECK constraints yet.
+- file_size CHECK constraint: defense-in-depth only. Actual byte count verified server-side.
+- mime_type CHECK constraint: defense-in-depth only. MIME type is determined from file content
+  (magic bytes) server-side, not from filename extension or browser-supplied Content-Type.
+- Per-report count limit (max 5) is enforced server-side before insert; cannot be expressed
+  as a single-row CHECK constraint.
+- Supabase Storage bucket policy should also enforce size and MIME type limits as additional
+  defense-in-depth layer.
+- PD-D2 RECOMMENDED: mutability not decided. UPDATE and DELETE currently denied for all roles.
 
 ---
 
@@ -268,7 +291,7 @@ Purpose: Append-only audit trail of every status transition.
 | previous_status | report_status | | Status before transition, NULL for initial submission |
 | new_status | report_status | NOT NULL | Status after transition |
 | changed_by | UUID | NOT NULL FK -> profiles(id) RESTRICT | User who performed transition |
-| reason | TEXT | | Reason (required for on_hold, cancelled, reopened) |
+| reason | TEXT | | Required for on_hold, cancelled, reopened; optional otherwise |
 | created_at | TIMESTAMPTZ | NOT NULL DEFAULT now() | Transition timestamp |
 
 Indexes: Index on report_id. Index on created_at. Composite index on (report_id, created_at).
@@ -276,7 +299,9 @@ Indexes: Index on report_id. Index on created_at. Composite index on (report_id,
 Key notes:
 - Append-only. No UPDATE or DELETE permitted (RLS-enforced).
 - previous_status is NULL for the initial submission record.
-- reason required for on_hold, cancelled, reopened transitions (application-enforced).
+- reason required for on_hold (APPROVED PD-W1), cancelled (APPROVED PD-W2, PD-W3),
+  and reopened transitions. Application-enforced; cannot be expressed as a row-level CHECK
+  without knowing the new_status at insert time (which the trigger or application supplies).
 - changed_by populated from auth.uid() by application at transition time.
 
 ---
@@ -302,7 +327,8 @@ Permission rules (ROLES.md):
 - Coordinators: any report.
 - Administrator and Management: not permitted to comment.
 
-Note (PD-D3): If edits not permitted, remove updated_at and its trigger.
+Note (PD-D3 RECOMMENDED): If edits not permitted, remove updated_at and its trigger.
+Until decided, updated_at is retained and edits are provisionally allowed by the original author.
 
 ---
 
@@ -333,6 +359,11 @@ Reassignment process:
 2. Previous record status set to reassigned (not deleted).
 3. report_status_history records the reassignment.
 4. Both technicians receive notifications.
+
+Cancellation handling (per APPROVED PD-W3):
+- When a report is cancelled, the active assignment record status is set to cancelled.
+- The assigned technician receives a report_cancelled notification.
+- See PD-W4 (RECOMMENDED) for the full assignment-handling policy confirmation.
 
 ---
 
@@ -377,7 +408,9 @@ Key notes:
 - Append-only. No UPDATE or DELETE permitted (RLS-enforced).
 - verified_by must have role = coordinator (application-enforced).
 - verified_by must NOT be the technician who performed the work (D2, application-enforced).
-- PD-R4 open: whether verified_by can equal reports.reporter_id is not yet decided.
+- verified_by must NOT be the original submitter of the report (reports.reporter_id).
+  APPROVED (PD-R4, 2026-10-18). Enforced at both RLS and application levels.
+  This is distinct from D2: it checks against reports.reporter_id, not the assignment technician_id.
 - is_satisfactory = true triggers completed to verified transition.
 - is_satisfactory = false triggers completed to reopened transition (reason required).
 
@@ -403,7 +436,7 @@ Indexes: Composite index on (recipient_id, is_read, created_at). Index on report
 Key notes:
 - report_id ON DELETE SET NULL preserves notification history if report is deleted.
 - Only is_read updatable by recipient. All other columns immutable.
-- Creation by application logic recommended (PD-D6).
+- Creation by application logic recommended (PD-D6 RECOMMENDED).
 
 Notification events and recipients (WORKFLOW.md):
 
@@ -429,11 +462,11 @@ Notification events and recipients (WORKFLOW.md):
 |---|---|---|
 | auth.users to profiles | 1:1 | Profiles extend Auth users |
 | profiles to reports (reporter) | 1:N | User submits many reports |
-| profiles to role_change_audit (subject) | 1:N | Role changes applied to user |
-| profiles to role_change_audit (changer) | 1:N | Administrator who changed role |
+| profiles to role_change_audit (subject) | 1:N | Role changes applied to user (APPROVED OD-NEW-1) |
+| profiles to role_change_audit (changer) | 1:N | Administrator who changed role (APPROVED OD-NEW-1) |
 | categories to reports | 1:N | Reports belong to one category |
 | locations to reports | 1:N | Reports located at one location |
-| reports to report_attachments | 1:0..* | Zero or more photos (D4) |
+| reports to report_attachments | 1:0..5 | Zero to five photos (D4 + APPROVED PD-D5) |
 | reports to report_status_history | 1:1..* | At least one entry per report |
 | reports to report_comments | 1:0..* | Zero or more comments |
 | reports to assignments | 1:0..* | One active; many over report lifetime |
@@ -446,27 +479,35 @@ Notification events and recipients (WORKFLOW.md):
 
 ## Status Transition Map
 
-From WORKFLOW.md Section Status Transition Table.
+Updated with APPROVED decisions PD-W1, PD-W2, and PD-W3.
 
 | From | To | Actor | Reason Required |
 |---|---|---|---|
 | submitted | under_review | Coordinator | No |
 | submitted | assigned | Coordinator | No |
-| submitted | cancelled | Pending PD-W2 and PD-W3 | Yes |
+| submitted | cancelled | Reporter or Coordinator (APPROVED PD-W2, PD-W3) | Yes |
 | under_review | assigned | Coordinator | No |
-| under_review | cancelled | Pending PD-W3 | Yes |
+| under_review | cancelled | Reporter or Coordinator (APPROVED PD-W2, PD-W3) | Yes |
 | assigned | in_progress | Technician | No |
 | assigned | assigned (reassign) | Coordinator | No |
-| assigned | cancelled | Pending PD-W3 and PD-W4 | Yes |
-| in_progress | on_hold | Pending PD-W1 | Yes |
+| assigned | cancelled | Coordinator (APPROVED PD-W3) | Yes |
+| in_progress | on_hold | Technician or Coordinator (APPROVED PD-W1) | Yes |
 | in_progress | completed | Technician | No |
-| in_progress | cancelled | Pending PD-W3 | Yes |
-| on_hold | in_progress | Pending PD-W1 | No |
-| completed | verified | Coordinator | No |
+| in_progress | cancelled | Coordinator (APPROVED PD-W3) | Yes |
+| on_hold | in_progress | Technician or Coordinator (APPROVED PD-W1) | No |
+| completed | verified | Coordinator (subject to D2 + PD-R4 restrictions) | No |
 | completed | reopened | Coordinator | Yes |
 | reopened | in_progress | Technician | No |
+| reopened | cancelled | Coordinator (APPROVED PD-W3) | Yes |
 
 Terminal states: verified, cancelled. No transitions permitted from these states.
+
+Unauthorized actors for each transition:
+- student_personnel may only cancel reports where reporter_id = their own id AND
+  status is submitted or under_review (APPROVED PD-W2).
+- Technician may transition in_progress to on_hold and on_hold to in_progress only
+  for reports where they have an active assignment (APPROVED PD-W1).
+- No role can transition from verified or cancelled.
 
 ---
 
@@ -479,33 +520,38 @@ All triggers are pseudocode proposals. Not implemented. Require owner authorizat
 Tables: profiles, reports, report_comments
 Event: BEFORE UPDATE
 Action: Sets updated_at = now() on each modified row.
-Implementation: Single shared function fn_set_updated_at() applied via separate
-triggers on each table.
+Implementation: Single shared function fn_set_updated_at() applied via separate triggers.
 
 ### T2 - Report Number Generation
 
 Table: reports
 Event: BEFORE INSERT
-Action: Generates report_number from a PostgreSQL sequence.
-Proposed format (recommendation, pending PD-D4): RPT-000001
-Examples: RPT-000001, RPT-000042, RPT-001337
+Action: Generates report_number from a dedicated PostgreSQL SEQUENCE.
 
-Alternative formats for owner consideration:
-- Year-prefixed: RPT-2026-000001
-- Category-coded: RPT-ELEC-000001
-- Simple integer: 1, 2, 3
+APPROVED (PD-D4): Format is RPT-000001 via nextval('report_number_seq').
 
-Decision required (PD-D4): confirm format before trigger is implemented.
+Implementation notes (pseudocode):
+  CREATE SEQUENCE IF NOT EXISTS report_number_seq START 1;
+
+  fn_generate_report_number() BEFORE INSERT ON reports:
+    NEW.report_number = 'RPT-' || LPAD(nextval('report_number_seq')::TEXT, 6, '0')
+
+Concurrency safety:
+- nextval() always returns a unique value per invocation, even under concurrent inserts.
+- Gaps in the sequence are acceptable and expected (e.g., on transaction rollback).
+- The UNIQUE constraint on report_number provides the final guarantee.
+- report_number must not be overrideable by INSERT input - the trigger always sets it.
 
 ### T3 - Status History Recording
 
 Table: reports
 Event: AFTER UPDATE when status changes
-Action: Inserts record into report_status_history.
+Action: Inserts record into report_status_history as safety net.
 
-Important limitation: reason field cannot be auto-populated by trigger.
-Recommended approach: application inserts into report_status_history with reason,
-then updates reports.status. This trigger serves as a safety net only.
+Important limitation: reason cannot be auto-populated by trigger.
+Recommended approach: application inserts into report_status_history (with reason
+for transitions requiring it per PD-W1, PD-W2, PD-W3 decisions), then updates
+reports.status. Trigger is a safety net only.
 
 ### T4 - Profile Creation on Auth Signup
 
@@ -513,7 +559,7 @@ Table: auth.users
 Event: AFTER INSERT
 Action: Inserts new profiles row with role = student_personnel.
 Implementation: SECURITY DEFINER function. Keep body minimal.
-Note: Not listed in DATABASE.md triggers. Added to satisfy SECURITY.md authentication flow.
+Note: Not listed in DATABASE.md triggers. Required per SECURITY.md authentication flow.
 
 ---
 
@@ -564,49 +610,48 @@ No UPDATE or DELETE permitted (enforced via RLS):
 - report_status_history
 - verifications
 - work_logs
-- role_change_audit
+- role_change_audit (APPROVED OD-NEW-1)
 
 ---
 
 ## Deviations from DATABASE.md
 
-| # | Item | Nature | Explanation |
-|---|---|---|---|
-| 1 | role_change_audit table | New table | Satisfies ROLES.md and SECURITY.md audit requirements. Requires owner approval (OD-NEW-1). |
-| 2 | chk_mime_type on report_attachments | New constraint | Database-level MIME enforcement from SECURITY.md. Owner must confirm accepted types. |
-| 3 | chk_role_changed on role_change_audit | New constraint | Prevents no-op audit log entries. |
-| 4 | T4 profile creation trigger | New trigger | Required for Supabase Auth + profiles integration per SECURITY.md. Not in DATABASE.md. |
-| 5 | RESTRICT on user FK references | Clarification | Formalizes DATABASE.md note about no cascade for user references to prevent accidental data loss. |
+| # | Item | Nature | Status | Explanation |
+|---|---|---|---|---|
+| 1 | role_change_audit table | New table | APPROVED OD-NEW-1 | Satisfies ROLES.md and SECURITY.md audit requirements. |
+| 2 | chk_mime_type on report_attachments | New constraint | APPROVED PD-D5 | Database-level MIME enforcement. Types confirmed: JPEG, PNG, WebP. |
+| 3 | chk_file_size on report_attachments | New constraint | APPROVED PD-D5 | file_size > 0 AND file_size <= 10485760 (10 MB). Defense-in-depth layer. |
+| 4 | chk_role_changed on role_change_audit | New constraint | APPROVED OD-NEW-1 | Prevents no-op audit log entries. |
+| 5 | T2 trigger uses PostgreSQL SEQUENCE | Clarification | APPROVED PD-D4 | Sequence guarantees concurrency-safe unique values. |
+| 6 | T4 profile creation trigger | New trigger | Proposed | Required for Supabase Auth + profiles integration per SECURITY.md. Not in DATABASE.md. |
+| 7 | RESTRICT on user FK references | Clarification | Proposed | Formalizes DATABASE.md note about no cascade for user references. |
+| 8 | PD-R4 self-verification check on verifications | Additional constraint | APPROVED PD-R4 | verified_by must not equal reports.reporter_id. Enforced at RLS + app. |
 
 ---
 
 ## Open Items Requiring Owner Decision
 
-See OPEN_DECISIONS.md for full context and recommendations.
+See OPEN_DECISIONS.md for full context and migration-blocking status.
 
-| Decision ID | Impact on Schema |
-|---|---|
-| PD-D1 | locations table vs split buildings and rooms |
-| PD-D2 | Mutability of report_attachments |
-| PD-D3 | Mutability of report_comments; updated_at retention |
-| PD-D4 | report_number format |
-| PD-D5 | File size and count limits; additional CHECK constraints |
-| PD-D6 | Notification creation: triggers vs application |
-| PD-D7 | confirmed_priority nullable vs default |
-| PD-D8 | Hard user deletion support |
-| PD-D9 | Timestamps on categories table |
-| PD-D10 | Uniqueness constraint on locations(building_name, floor, room) |
-| PD-R2 | assignment_status extension with declined value |
-| PD-R4 | Coordinator self-verification constraint |
-| PD-W1 | Who can initiate on_hold |
-| PD-W2, PD-W3 | Cancellation authority |
-| PD-W4 | Assignment handling on cancellation |
-| PD-W5 | Maximum reopening count; possible counter column |
-| OD-NEW-1 | Owner approval for role_change_audit table |
+| Decision ID | Status | Blocks Migration | Impact on Schema |
+|---|---|---|---|
+| PD-D1 | RECOMMENDED | No | locations table structure |
+| PD-D2 | RECOMMENDED | Yes (RLS only) | report_attachments UPDATE/DELETE policy |
+| PD-D3 | RECOMMENDED | Yes (RLS only) | report_comments UPDATE/DELETE policy; updated_at retention |
+| PD-D6 | RECOMMENDED | No | Notification creation method |
+| PD-D7 | RECOMMENDED | No | confirmed_priority nullable vs default |
+| PD-D8 | OPEN | No | Hard user deletion support |
+| PD-D9 | RECOMMENDED | No | Timestamps on categories |
+| PD-D10 | RECOMMENDED | No | Uniqueness constraint on locations |
+| PD-R1 | RECOMMENDED | Yes (RLS only) | Technician SELECT scope |
+| PD-R2 | OPEN | Yes (enum) | assignment_status extension with declined |
+| PD-R6 | OPEN | Yes (RLS only) | Administrator and Management INSERT on reports |
+| PD-W4 | RECOMMENDED | No | Assignment status on cancellation |
+| PD-W5 | OPEN | No | Maximum reopening count |
+| PD-W6 | RECOMMENDED | No | under_review always required |
 
 ---
 
-*Phase 3A database planning. See README.md for project overview.*
-*See OPEN_DECISIONS.md for all unresolved decisions.*
+*Phase 3B update 2026-10-18. See OPEN_DECISIONS.md for all decisions.*
 *See RLS_POLICY_PROPOSAL.md for access control policies.*
 *See DATA_DICTIONARY.md for column-level definitions.*
