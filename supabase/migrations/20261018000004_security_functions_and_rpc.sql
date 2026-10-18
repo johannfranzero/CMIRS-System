@@ -14,13 +14,13 @@ SECURITY DEFINER
 SET search_path = public, auth, pg_temp
 AS $$
 DECLARE
-  current_role user_role;
+  caller_role user_role;
 BEGIN
-  SELECT role INTO current_role
+  SELECT role INTO caller_role
   FROM public.profiles
   WHERE id = auth.uid();
 
-  RETURN current_role;
+  RETURN caller_role;
 END;
 $$;
 
@@ -43,12 +43,12 @@ SECURITY DEFINER
 SET search_path = public, auth, pg_temp
 AS $$
 DECLARE
-  current_role user_role;
+  caller_role user_role;
 BEGIN
-  current_role := public.get_user_role();
+  caller_role := public.get_user_role();
 
   -- 1. Oversight roles see all reports
-  IF current_role IN ('coordinator', 'administrator', 'management') THEN
+  IF caller_role IN ('coordinator', 'administrator', 'management') THEN
     RETURN TRUE;
   END IF;
 
@@ -62,7 +62,7 @@ BEGIN
   END IF;
 
   -- 3. Technician with qualifying assignment (all statuses EXCEPT declined, APPROVED OD-NEW-4)
-  IF current_role = 'technician' AND EXISTS (
+  IF caller_role = 'technician' AND EXISTS (
     SELECT 1 FROM public.assignments a
     WHERE a.report_id = report_id
       AND a.technician_id = auth.uid()
