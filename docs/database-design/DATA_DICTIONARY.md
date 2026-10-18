@@ -1,7 +1,7 @@
 # CMIRS - Data Dictionary
 
-> **Status: PROPOSAL - Updated Phase 3C (2026-10-18). Not implemented.**
-> Reflects all owner-approved decisions through Phase 3C.
+> **Status: PROPOSAL - Updated Phase 3D (2026-10-18). Not implemented.**
+> Reflects all owner-approved decisions through Phase 3D.
 > Column-level definitions for all proposed tables.
 
 ## Table of Contents
@@ -33,7 +33,7 @@ This data dictionary defines every column in every proposed CMIRS table. For eac
 - Constraints: key constraints (PK, FK, UNIQUE, CHECK, NOT NULL)
 - Description: semantic meaning and usage notes
 
-Phase 3B and 3C changes are noted inline where applicable.
+Phase 3B, 3C, and 3D changes are noted inline.
 
 ---
 
@@ -43,25 +43,25 @@ Phase 3B and 3C changes are noted inline where applicable.
 
 | Value | Description |
 |---|---|
-| student_personnel | Default role assigned at registration. Represents any student or school staff member who reports issues. Has the least operational permissions. May submit reports. |
-| coordinator | Maintenance Coordinator. Reviews, assigns, and verifies reports. Central operational role. Cannot verify own submitted reports (APPROVED PD-R4). |
-| technician | Maintenance Technician. Performs repairs and logs work. Accesses only assigned reports (APPROVED PD-R1). May initiate work holds (APPROVED PD-W1) and decline assignments (APPROVED PD-R2). May submit reports (APPROVED PD-R6). |
-| administrator | School Administrator. Manages user accounts and role assignments. Cannot perform operational maintenance actions. May submit reports (APPROVED PD-R6). |
-| management | School Management. Read-only visibility into system operations and reports. May submit reports (APPROVED PD-R6). |
+| student_personnel | Default role assigned at registration. Primary reporters. Least operational permissions. |
+| coordinator | Maintenance Coordinator. Reviews, assigns, verifies. Cannot verify own submitted reports (APPROVED PD-R4). |
+| technician | Maintenance Technician. Performs repairs. Sees only qualifying assigned reports (APPROVED PD-R1). May decline assignments with a required reason (APPROVED PD-R2, OD-NEW-3). May submit reports (APPROVED PD-R6). |
+| administrator | School Administrator. Manages user accounts and role assignments. No operational maintenance actions. May submit reports (APPROVED PD-R6). |
+| management | School Management. Read-only oversight. May submit reports (APPROVED PD-R6). |
 
 ### report_status
 
 | Value | Terminal | Description |
 |---|---|---|
-| submitted | No | Initial state when a report is created. Awaiting coordinator review. Reporter may cancel at this stage (APPROVED PD-W2). |
-| under_review | No | Coordinator is actively reviewing the report and assessing priority. Reporter may cancel at this stage (APPROVED PD-W2). |
-| assigned | No | Report assigned to a technician. Work has not started. Only coordinator may cancel (APPROVED PD-W3). |
-| in_progress | No | Assigned technician is actively working on the repair. Technician or coordinator may initiate hold (APPROVED PD-W1). Only coordinator may cancel (APPROVED PD-W3). |
-| on_hold | No | Work is temporarily paused. Requires a reason. Technician or coordinator may resume (APPROVED PD-W1). Only coordinator may cancel (APPROVED PD-W3). |
-| completed | No | Technician finished the repair. Awaiting coordinator verification. Only coordinator may cancel (APPROVED PD-W3). |
-| verified | Yes | Coordinator verified the repair is satisfactory. Report closed. |
-| reopened | No | Verification failed. Report returned for additional work. Only coordinator may cancel (APPROVED PD-W3). |
-| cancelled | Yes | Report cancelled. No further transitions. Reason always required. |
+| submitted | No | Initial state. Awaiting coordinator review. Reporter or coordinator may cancel (APPROVED PD-W2). |
+| under_review | No | Coordinator reviewing and assessing priority. Reporter or coordinator may cancel (APPROVED PD-W2). |
+| assigned | No | Assigned to technician. Work not started. Coordinator may cancel (PD-W3). Technician may decline from this state (PD-R2). |
+| in_progress | No | Technician actively working. Technician or coordinator may initiate hold (PD-W1). Coordinator may cancel (PD-W3). |
+| on_hold | No | Work paused. Reason required. Technician or coordinator may resume (PD-W1). Coordinator may cancel (PD-W3). |
+| completed | No | Technician finished. Awaiting coordinator verification. Coordinator may cancel (PD-W3). |
+| verified | Yes | Coordinator verified repair satisfactory. Report closed. |
+| reopened | No | Verification failed. Report returned for additional work. Coordinator may cancel (PD-W3). |
+| cancelled | Yes | Cancelled. Reason always required. No further transitions. |
 
 ### priority_level
 
@@ -70,28 +70,23 @@ Phase 3B and 3C changes are noted inline where applicable.
 | low | Minor cosmetic or non-urgent issue. | Scheduled maintenance window. |
 | medium | Functional issue affecting usability. | Addressed within normal workflow. |
 | high | Significant issue affecting safety or operations. | Prioritized for prompt attention. |
-| critical | Immediate safety hazard requiring urgent response. | Expedited handling per WORKFLOW.md. |
+| critical | Immediate safety hazard requiring urgent response. | Expedited per WORKFLOW.md. |
 
 ### assignment_status
 
-| Value | Active | Description |
-|---|---|---|
-| assigned | Yes | Technician has been assigned. Work not yet started. |
-| in_progress | Yes | Technician is actively working on the assignment. |
-| on_hold | Yes | Work is temporarily paused (APPROVED PD-W1). |
-| completed | No | Technician has finished the assigned work. Not modified by report cancellation. |
-| reassigned | No | This assignment was superseded by a new assignment. Kept for audit trail. Not modified by report cancellation. |
-| cancelled | No (terminal) | Assignment cancelled because the parent report was cancelled (APPROVED PD-W4). No further status updates or work_log inserts are permitted against a cancelled assignment. |
-| declined | No (terminal) | Technician declined the assignment (APPROVED PD-R2). A reason is required (gap: OD-NEW-3 — no current field to store it). No further status updates or work_log inserts are permitted. Declined assignments are excluded from the technician report-visibility rule (APPROVED PD-R1). |
+| Value | Active | Qualifies for Technician Visibility | Description |
+|---|---|---|---|
+| assigned | Yes | Yes | Technician assigned. Work not yet started. |
+| in_progress | Yes | Yes | Technician actively working. |
+| on_hold | Yes | Yes | Work paused (APPROVED PD-W1). |
+| completed | No | Yes | Work finished. Historical access preserved for own work_logs. |
+| reassigned | No | Yes | Superseded by new assignment. Historical access preserved (APPROVED OD-NEW-4). |
+| cancelled | No (terminal) | Yes | Cancelled with parent report (APPROVED PD-W4). Historical access preserved. |
+| declined | No (terminal) | No | Technician declined before starting (APPROVED PD-R2, OD-NEW-4). decline_reason required. No work_logs. Excluded from visibility. |
 
-Active statuses (assigned, in_progress, on_hold):
-- May receive work_logs.
-- May receive status updates.
-- Are marked cancelled atomically when parent report is cancelled (APPROVED PD-W4).
-
-Non-active statuses (completed, reassigned, cancelled, declined):
-- Cannot receive work_logs.
-- Cannot receive further status updates (terminal for the assignment record).
+Active statuses (assigned, in_progress, on_hold) may receive work_logs and status updates.
+Non-active statuses block further work_logs and status updates.
+Declined and cancelled are terminal for the assignment record.
 
 ### notification_type
 
@@ -105,68 +100,60 @@ Non-active statuses (completed, reassigned, cancelled, declined):
 | verification_required | Repair completed. Sent to coordinator for verification. |
 | verification_complete | Coordinator verified satisfactory. Sent to reporter and technician. |
 | verification_failed | Verification rejected. Sent to reporter and technician. |
-| report_reassigned | Report reassigned to different technician. Sent to both technicians and coordinator. |
+| report_reassigned | Report reassigned. Sent to both technicians and coordinator. |
 | report_cancelled | Report cancelled. Sent to all parties including affected technicians. |
 
-Note: An assignment_declined notification type may be needed for coordinator notification
-when a technician declines. This is a pending implementation detail (not yet formally approved).
+Note: assignment_declined notification type not yet formally approved.
 
 ---
 
 ## Table: profiles
 
 Purpose: Extends auth.users with application-specific data.
-Single source of truth for user identity and role.
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | id | UUID | No | None | PK, references auth.users(id) ON DELETE CASCADE | User identifier from Supabase Auth. Set by T4. |
-| email | TEXT | No | None | NOT NULL | User email address from Auth. |
+| email | TEXT | No | None | NOT NULL | User email address. |
 | full_name | TEXT | No | None | NOT NULL | User display name. |
-| role | user_role | No | student_personnel | NOT NULL DEFAULT student_personnel | Operational role (D1). Only administrator may change this column. |
+| role | user_role | No | student_personnel | NOT NULL DEFAULT student_personnel | Operational role (D1). Only administrator may change. |
 | phone | TEXT | Yes | NULL | None | Optional phone number. |
-| is_active | BOOLEAN | No | true | NOT NULL DEFAULT true | Whether account is active. Soft-deactivation (PD-D8 OPEN). |
+| is_active | BOOLEAN | No | true | NOT NULL DEFAULT true | Active account flag. Soft-deactivation (PD-D8 OPEN). |
 | created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | Account creation timestamp. |
-| updated_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | Last profile modification. Updated by T1. |
+| updated_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | Last modification. Updated by T1. |
 
 ---
 
 ## Table: role_change_audit
 
-Purpose: Append-only audit log of every role assignment and change.
-APPROVED (OD-NEW-1, 2026-10-18).
+Purpose: Append-only audit log. APPROVED (OD-NEW-1).
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Audit record identifier. |
-| user_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | The user whose role changed. |
-| changed_by | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | The administrator who performed the change. |
-| old_role | user_role | No | None | NOT NULL | Role before the change. |
-| new_role | user_role | No | None | NOT NULL | Role after the change. |
-| reason | TEXT | Yes | NULL | None | Optional justification for the change. |
-| created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When the change was recorded. |
+| user_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | User whose role changed. |
+| changed_by | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | Administrator who changed the role. |
+| old_role | user_role | No | None | NOT NULL | Role before change. |
+| new_role | user_role | No | None | NOT NULL | Role after change. |
+| reason | TEXT | Yes | NULL | None | Optional justification. |
+| created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When change was recorded. |
 
-Check constraint: chk_role_changed: old_role <> new_role. Prevents no-op audit entries.
-Append-only.
+Check: old_role <> new_role. Append-only.
 
 ---
 
 ## Table: categories
-
-Purpose: Predefined maintenance issue categories.
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Category identifier. |
 | name | TEXT | No | None | NOT NULL UNIQUE | Unique category name. |
 | description | TEXT | Yes | NULL | None | Optional description. |
-| is_active | BOOLEAN | No | true | NOT NULL DEFAULT true | Whether available for new reports. Soft-delete. |
+| is_active | BOOLEAN | No | true | NOT NULL DEFAULT true | Available for new reports. Soft-delete. |
 
 ---
 
 ## Table: locations
-
-Purpose: Campus locations.
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
@@ -175,26 +162,24 @@ Purpose: Campus locations.
 | floor | TEXT | Yes | NULL | None | Floor number or description. |
 | room | TEXT | Yes | NULL | None | Room number or name. |
 | description | TEXT | Yes | NULL | None | Additional location details. |
-| is_active | BOOLEAN | No | true | NOT NULL DEFAULT true | Whether available for new reports. Soft-delete. |
+| is_active | BOOLEAN | No | true | NOT NULL DEFAULT true | Available for new reports. Soft-delete. |
 
 ---
 
 ## Table: reports
 
-Purpose: Central entity for the full lifecycle of each maintenance and incident report.
-
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Report identifier. |
-| report_number | TEXT | No | None | NOT NULL UNIQUE | Human-readable report number. Generated by T2 as RPT-000001 format using PostgreSQL SEQUENCE (APPROVED PD-D4). Immutable after creation. |
-| title | TEXT | No | None | NOT NULL | Brief summary of the issue. |
-| description | TEXT | No | None | NOT NULL | Detailed description of the problem. |
-| category_id | UUID | No | None | NOT NULL, FK -> categories(id) RESTRICT | The maintenance category. |
-| location_id | UUID | No | None | NOT NULL, FK -> locations(id) RESTRICT | Where the issue is located. |
-| reporter_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | The user who submitted the report. Set to auth.uid() at INSERT. Any authenticated role may submit (APPROVED PD-R6). Used in the coordinator self-verification check (APPROVED PD-R4) and reporter cancellation authority check (APPROVED PD-W2). |
-| status | report_status | No | submitted | NOT NULL DEFAULT submitted | Current lifecycle status. Transitions validated by application and trigger T3. |
-| is_urgent_hazard | BOOLEAN | No | false | NOT NULL DEFAULT false | Reporter-set urgent hazard flag (D3). Does not automatically set priority. |
-| confirmed_priority | priority_level | Yes | NULL | None | Coordinator-confirmed priority (D3). NULL until coordinator sets it (RECOMMENDED PD-D7). |
+| report_number | TEXT | No | None | NOT NULL UNIQUE | Generated by T2 as RPT-000001 (APPROVED PD-D4). Immutable. |
+| title | TEXT | No | None | NOT NULL | Brief issue summary. |
+| description | TEXT | No | None | NOT NULL | Detailed description. |
+| category_id | UUID | No | None | NOT NULL, FK -> categories(id) RESTRICT | Maintenance category. |
+| location_id | UUID | No | None | NOT NULL, FK -> locations(id) RESTRICT | Issue location. |
+| reporter_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | User who submitted the report. Set to auth.uid() at INSERT. Any authenticated role may submit (APPROVED PD-R6). Used in PD-R4 self-verification check and PD-W2 cancellation. |
+| status | report_status | No | submitted | NOT NULL DEFAULT submitted | Current lifecycle status. |
+| is_urgent_hazard | BOOLEAN | No | false | NOT NULL DEFAULT false | Reporter urgent-hazard flag (D3). |
+| confirmed_priority | priority_level | Yes | NULL | None | Coordinator-confirmed priority. NULL until set (RECOMMENDED PD-D7). |
 | created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | Report creation timestamp. |
 | updated_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | Last modification. Updated by T1. |
 
@@ -202,69 +187,67 @@ Purpose: Central entity for the full lifecycle of each maintenance and incident 
 
 ## Table: report_attachments
 
-Purpose: File metadata for optional photo attachments (D4).
-APPROVED (PD-D2, PD-D5, 2026-10-18): immutable after upload; coordinator-controlled deletion.
+Purpose: File metadata for optional photo attachments. APPROVED (PD-D2, PD-D5, OD-NEW-2).
+Soft deletion via deleted_at/deleted_by (APPROVED OD-NEW-2).
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Attachment identifier. |
-| report_id | UUID | No | None | NOT NULL, FK -> reports(id) ON DELETE CASCADE | The report this attachment belongs to. |
-| file_path | TEXT | No | None | NOT NULL | Path to the file in Supabase Storage. Preserved in any deletion audit log (OD-NEW-2). |
+| report_id | UUID | No | None | NOT NULL, FK -> reports(id) ON DELETE CASCADE | Associated report. |
+| file_path | TEXT | No | None | NOT NULL | Path in Supabase Storage. Preserved in soft-deleted rows for Storage retry. |
 | file_name | TEXT | No | None | NOT NULL | Original filename (sanitized server-side). |
 | file_size | INTEGER | No | None | NOT NULL, CHECK (file_size > 0 AND file_size <= 10485760) | File size in bytes. Max 10 MB (APPROVED PD-D5). |
-| mime_type | TEXT | No | None | NOT NULL, CHECK (mime_type IN ('image/jpeg','image/png','image/webp')) | MIME type. Verified via magic bytes server-side before INSERT (APPROVED PD-D5). |
-| uploaded_by | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | The user who uploaded the file. |
+| mime_type | TEXT | No | None | NOT NULL, CHECK (mime_type IN ('image/jpeg','image/png','image/webp')) | MIME type. Magic-byte verified server-side (APPROVED PD-D5). |
+| uploaded_by | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | User who uploaded. |
 | created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | Upload timestamp. |
+| deleted_at | TIMESTAMPTZ | Yes | NULL | None | Soft-delete timestamp. NULL = active. NOT NULL = soft-deleted (APPROVED OD-NEW-2). Set by coordinator via SECURITY DEFINER RPC. Immutable once set (RLS prevents UPDATE on deleted rows). |
+| deleted_by | UUID | Yes | NULL | FK -> profiles(id) RESTRICT | Coordinator who initiated soft deletion. NULL if active (APPROVED OD-NEW-2). Set alongside deleted_at. Immutable once set. FK ON DELETE RESTRICT preserves audit trail even if coordinator profile is deactivated. |
 
 Key notes:
-- Immutable after upload. UPDATE is DENY for all roles (APPROVED PD-D2).
-- Per-report limit of 5 enforced server-side (APPROVED PD-D5). Not expressible as row-level CHECK.
-- Coordinator-controlled deletion approved in principle (PD-D2). Not yet implementable:
-  OD-NEW-2 (deletion audit mechanism) must be resolved first.
-  Conservative default: DELETE DENY for all roles until OD-NEW-2 is resolved.
-- Partial failure handling: DB record removed first, then Storage deletion attempted asynchronously.
-  See OPEN_DECISIONS.md PD-D2 for full partial-failure handling documentation.
+- Active attachments: deleted_at IS NULL.
+- Soft-deleted attachments: deleted_at IS NOT NULL. Retained indefinitely for audit.
+- File metadata (file_path through created_at) is immutable after upload. UPDATE is DENY
+  for all roles on these columns (APPROVED PD-D2).
+- Soft deletion is performed via a SECURITY DEFINER RPC that validates role and current state.
+- Per-report active count: COUNT WHERE report_id = $1 AND deleted_at IS NULL <= 5 (PD-D5).
+- Soft-deleted attachments visible to coordinator, administrator, management for audit.
+  Hidden from student_personnel and technicians (SELECT WHERE deleted_at IS NULL).
+- Open question: no deletion reason is recorded. A separate decision is needed if
+  a justification field is required for audit compliance.
 
 ---
 
 ## Table: report_status_history
 
-Purpose: Append-only audit trail of every status transition on a report.
+Purpose: Append-only audit trail of every status transition.
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | History entry identifier. |
-| report_id | UUID | No | None | NOT NULL, FK -> reports(id) ON DELETE CASCADE | The report this history entry belongs to. |
-| previous_status | report_status | Yes | NULL | None | Status before transition. NULL for initial submission record. |
-| new_status | report_status | No | None | NOT NULL | Status after the transition. |
-| changed_by | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | The user who performed the transition. |
-| reason | TEXT | Yes | NULL | None | Required for on_hold (APPROVED PD-W1), cancelled (APPROVED PD-W2, PD-W3), and reopened transitions. Optional for all other transitions. Application-enforced. |
+| report_id | UUID | No | None | NOT NULL, FK -> reports(id) ON DELETE CASCADE | Associated report. |
+| previous_status | report_status | Yes | NULL | None | Status before transition. NULL for initial submission. |
+| new_status | report_status | No | None | NOT NULL | Status after transition. |
+| changed_by | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | User who performed the transition. |
+| reason | TEXT | Yes | NULL | None | Required for on_hold, cancelled, reopened. Optional otherwise. Application-enforced. |
 | created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | Transition timestamp. |
 
-Append-only. No UPDATE or DELETE permitted (RLS-enforced).
+Append-only. No UPDATE or DELETE permitted.
 
 ---
 
 ## Table: report_comments
 
-Purpose: User-authored comments on reports.
-IMMUTABLE after creation (APPROVED PD-D3, 2026-10-18).
+Purpose: User-authored comments. IMMUTABLE after creation (APPROVED PD-D3).
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Comment identifier. |
-| report_id | UUID | No | None | NOT NULL, FK -> reports(id) ON DELETE CASCADE | The report this comment belongs to. |
-| author_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | The user who wrote the comment. |
+| report_id | UUID | No | None | NOT NULL, FK -> reports(id) ON DELETE CASCADE | Associated report. |
+| author_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | User who wrote the comment. |
 | content | TEXT | No | None | NOT NULL | Comment text. |
-| created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When the comment was created. |
+| created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When comment was created. |
 
-Key notes:
-- updated_at column REMOVED (APPROVED PD-D3): comments are immutable; no edits permitted.
-- T1 trigger (fn_set_updated_at) does NOT apply to this table.
-- UPDATE and DELETE are DENY for all roles including coordinator and administrator.
-- Corrections must be posted as new follow-up comments.
-- No moderation exception or retention policy for MVP. A separate decision is required
-  if any deletion or editing need arises in the future.
+updated_at REMOVED (APPROVED PD-D3). T1 does NOT apply. UPDATE/DELETE DENY for all roles.
 
 ---
 
@@ -275,18 +258,15 @@ Purpose: Links reports to assigned technicians. All records retained for audit t
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Assignment identifier. |
-| report_id | UUID | No | None | NOT NULL, FK -> reports(id) ON DELETE CASCADE | The report being assigned. |
-| technician_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | The assigned technician. Must have role = technician (application-enforced). |
-| assigned_by | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | The coordinator who made the assignment. Must have role = coordinator (application-enforced). |
-| status | assignment_status | No | assigned | NOT NULL DEFAULT assigned | Current assignment status. Previous assignments are marked reassigned, not deleted. When a report is cancelled, all active assignments (status IN assigned, in_progress, on_hold) for that report are marked cancelled within a single atomic transaction (APPROVED PD-W4). Assignments at completed, reassigned, declined, or cancelled are not changed. Once an assignment reaches cancelled or declined it is terminal: no further status updates are permitted. |
-| assigned_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When this assignment was created. |
-| started_at | TIMESTAMPTZ | Yes | NULL | None | When the technician transitioned to in_progress. |
-| completed_at | TIMESTAMPTZ | Yes | NULL | None | When the technician marked the repair complete. |
-| notes | TEXT | Yes | NULL | None | Assignment notes from coordinator to technician. Not to be used for technician decline reason (see OD-NEW-3). |
-
-Schema gap (OD-NEW-3 OPEN): No field exists to store the technician's decline reason.
-assignments.notes is for coordinator notes, not technician responses.
-Until OD-NEW-3 is resolved, the decline reason cannot be reliably stored or audited.
+| report_id | UUID | No | None | NOT NULL, FK -> reports(id) ON DELETE CASCADE | Associated report. |
+| technician_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | Assigned technician (role = technician, app-enforced). |
+| assigned_by | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | Coordinator who made assignment (role = coordinator, app-enforced). |
+| status | assignment_status | No | assigned | NOT NULL DEFAULT assigned | Current status. Active (assigned, in_progress, on_hold) may receive work_logs. Non-active (completed, reassigned, cancelled, declined) are blocked. Declined and cancelled are terminal. When report is cancelled, active assignments (assigned, in_progress, on_hold) are marked cancelled atomically (APPROVED PD-W4). |
+| assigned_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When assignment was created. |
+| started_at | TIMESTAMPTZ | Yes | NULL | None | When technician transitioned to in_progress. |
+| completed_at | TIMESTAMPTZ | Yes | NULL | None | When technician marked work complete. |
+| notes | TEXT | Yes | NULL | None | Assignment notes from coordinator to technician. Not for decline reason. |
+| decline_reason | TEXT | Yes | NULL | CHECK (status != 'declined' OR decline_reason IS NOT NULL) | Technician's reason for declining this assignment (APPROVED OD-NEW-3). Required (non-null, non-empty) when status = declined. NULL for all other statuses. Set atomically with status change to declined. Immutable once status = declined (terminal). Application enforces non-empty string. An assignment can be declined at most once (declined is terminal); a single field is sufficient. |
 
 ---
 
@@ -296,49 +276,52 @@ Purpose: Append-only records of technician work sessions.
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
-| id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Unique identifier for this work log entry. |
-| assignment_id | UUID | No | None | NOT NULL, FK -> assignments(id) ON DELETE CASCADE | The assignment this work log belongs to. |
-| technician_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | The technician who performed this work. Must match assignment.technician_id (application-enforced). Work log inserts against a cancelled or declined assignment are blocked by the work_logs RLS INSERT policy (APPROVED PD-W4, PD-R2): the policy predicate checks assignment.status NOT IN ('cancelled', 'declined'). |
-| description | TEXT | No | None | NOT NULL | Description of the work performed during this session. |
-| hours_spent | DECIMAL(5,2) | Yes | NULL | None | Hours spent. Optional. Supports up to 999.99 hours. |
-| created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When this log entry was created. |
+| id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Work log identifier. |
+| assignment_id | UUID | No | None | NOT NULL, FK -> assignments(id) ON DELETE CASCADE | Associated assignment. |
+| technician_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | Technician who performed this work. Must match assignment.technician_id (app-enforced). INSERT blocked when assignment.status IN ('cancelled', 'declined') (APPROVED PD-W4, PD-R2, OD-NEW-3). |
+| description | TEXT | No | None | NOT NULL | Description of work performed. |
+| hours_spent | DECIMAL(5,2) | Yes | NULL | None | Hours spent. Optional. |
+| created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When log was created. |
 
 ---
 
 ## Table: verifications
 
-Purpose: Coordinator verification decisions on completed repairs. One record per attempt.
+Purpose: Coordinator verification decisions on completed repairs.
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
-| id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Verification record identifier. |
-| report_id | UUID | No | None | NOT NULL, FK -> reports(id) ON DELETE CASCADE | The report being verified. |
-| verified_by | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | The coordinator who performed verification. Must have role = coordinator (application-enforced). Must NOT be the technician_id of the active assignment (D2). Must NOT be reports.reporter_id for this report (APPROVED PD-R4). |
-| is_satisfactory | BOOLEAN | No | None | NOT NULL | Whether the repair passed verification. |
+| id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Verification identifier. |
+| report_id | UUID | No | None | NOT NULL, FK -> reports(id) ON DELETE CASCADE | Associated report. |
+| verified_by | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | Coordinator who performed verification. Must have role = coordinator (app-enforced). Must NOT be the assignment's performing technician (D2). Must NOT equal reports.reporter_id (APPROVED PD-R4). |
+| is_satisfactory | BOOLEAN | No | None | NOT NULL | Whether repair passed verification. |
 | notes | TEXT | Yes | NULL | None | Verification notes or rejection reason. |
 | verified_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When verification was performed. |
+
+Append-only.
 
 ---
 
 ## Table: notifications
 
-Purpose: In-app notification records (D7). MVP only — no email/SMS/push.
+Purpose: In-app notifications (D7). MVP only.
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | id | UUID | No | gen_random_uuid() | PK DEFAULT gen_random_uuid() | Notification identifier. |
-| recipient_id | UUID | No | None | NOT NULL, FK -> profiles(id) ON DELETE CASCADE | The user receiving this notification. |
-| type | notification_type | No | None | NOT NULL | Category of the notification event. |
-| title | TEXT | No | None | NOT NULL | Notification title displayed to user. |
+| recipient_id | UUID | No | None | NOT NULL, FK -> profiles(id) ON DELETE CASCADE | User receiving notification. |
+| type | notification_type | No | None | NOT NULL | Notification category. |
+| title | TEXT | No | None | NOT NULL | Notification title. |
 | message | TEXT | No | None | NOT NULL | Notification body text. |
-| report_id | UUID | Yes | NULL | FK -> reports(id) ON DELETE SET NULL | Associated report (nullable; some notifications may not reference a specific report). |
-| is_read | BOOLEAN | No | false | NOT NULL DEFAULT false | Whether the recipient has read this notification. |
-| created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When this notification was created. |
+| report_id | UUID | Yes | NULL | FK -> reports(id) ON DELETE SET NULL | Associated report. Nullable. |
+| is_read | BOOLEAN | No | false | NOT NULL DEFAULT false | Whether recipient has read notification. |
+| created_at | TIMESTAMPTZ | No | now() | NOT NULL DEFAULT now() | When notification was created. |
 
-Only is_read may be updated (by the recipient). All other columns immutable.
+Only is_read updatable by recipient. All other columns immutable.
 
 ---
 
-*Phase 3C update 2026-10-18. See OPEN_DECISIONS.md for all decisions.*
-*See SCHEMA_PROPOSAL.md for table structure and constraints.*
+*Phase 3D update 2026-10-18. All schema decisions are now owner-approved.*
+*See OPEN_DECISIONS.md for all decisions.*
+*See SCHEMA_PROPOSAL.md for table structure.*
 *See RLS_POLICY_PROPOSAL.md for access control policies.*
