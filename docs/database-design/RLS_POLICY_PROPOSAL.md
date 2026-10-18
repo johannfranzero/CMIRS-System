@@ -360,9 +360,9 @@ Technician sees comments on qualifying assigned reports (`can_view_report(report
 Technician UPDATE (constrained):
 - Allowed transitions: assigned -> in_progress, in_progress -> completed,
   in_progress -> on_hold (PD-W1), on_hold -> in_progress (PD-W1).
-- Decline transition (APPROVED PD-R2, OD-NEW-3): assigned -> declined.
+- Decline transition (APPROVED PD-R2, OD-NEW-3, OD-REC-1): assigned -> declined.
   USING: status = 'assigned' AND technician_id = auth.uid().
-  WITH CHECK: status = 'declined' AND decline_reason IS NOT NULL.
+  WITH CHECK: status = 'declined' AND decline_reason IS NOT NULL AND btrim(decline_reason) != ''.
   Recommended implementation: SECURITY DEFINER RPC for column-level control.
 - No UPDATE once status is cancelled or declined (terminal). USING clause prevents it.
 - notes column: technician cannot update notes (coordinator-authored field).
