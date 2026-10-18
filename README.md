@@ -104,8 +104,8 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
 Copy `.env.example` to `.env.local` and provide your Supabase project credentials:
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://xyirfifvcntuzceivtho.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url_here
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key_here
 ```
 
 - **Never commit `.env.local`** or any file containing real credentials. The `.gitignore` already excludes `.env*` files.
