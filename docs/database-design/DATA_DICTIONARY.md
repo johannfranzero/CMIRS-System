@@ -208,10 +208,13 @@ Key notes:
 - Soft-deleted attachments: deleted_at IS NOT NULL. Retained indefinitely for audit.
 - File metadata (file_path through created_at) is immutable after upload. UPDATE is DENY
   for all roles on these columns (APPROVED PD-D2).
-- Soft deletion is performed via a SECURITY DEFINER RPC that validates role and current state.
 - Per-report active count: COUNT WHERE report_id = $1 AND deleted_at IS NULL <= 5 (PD-D5).
 - Soft-deleted attachments visible to coordinator, administrator, management for audit.
   Hidden from student_personnel and technicians (SELECT WHERE deleted_at IS NULL).
+- Storage cleanup: after soft deletion, application attempts to delete the Storage object
+  (file_path). Failure does not affect the audit record. Retry is managed by an
+  application-level background job (no storage_cleanup_completed column exists in the
+  database schema). file_path is preserved in the row for retry purposes.
 - Open question: no deletion reason is recorded. A separate decision is needed if
   a justification field is required for audit compliance.
 
@@ -266,7 +269,7 @@ Purpose: Links reports to assigned technicians. All records retained for audit t
 | started_at | TIMESTAMPTZ | Yes | NULL | None | When technician transitioned to in_progress. |
 | completed_at | TIMESTAMPTZ | Yes | NULL | None | When technician marked work complete. |
 | notes | TEXT | Yes | NULL | None | Assignment notes from coordinator to technician. Not for decline reason. |
-| decline_reason | TEXT | Yes | NULL | CHECK (status != 'declined' OR decline_reason IS NOT NULL) | Technician's reason for declining this assignment (APPROVED OD-NEW-3). Required (non-null, non-empty) when status = declined. NULL for all other statuses. Set atomically with status change to declined. Immutable once status = declined (terminal). Application enforces non-empty string. An assignment can be declined at most once (declined is terminal); a single field is sufficient. |
+| decline_reason | TEXT | Yes | NULL | CHECK (status != 'declined' OR (decline_reason IS NOT NULL AND btrim(decline_reason) != '')) | Technician's reason for declining this assignment (APPROVED OD-NEW-3, OD-REC-1). Required when status = declined. Database constraint rejects NULL, empty string, or whitespace-only reasons directly via btrim(). NULL for all other statuses. Set atomically with status change to declined. Immutable once status = declined (terminal). An assignment can be declined at most once (declined is terminal); a single field is sufficient. |
 
 ---
 

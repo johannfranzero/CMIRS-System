@@ -1,7 +1,7 @@
 # CMIRS - RLS Policy Proposal
 
-> **Status: PROPOSAL - Updated Phase 3D (2026-10-18). Not applied to Supabase.**
-> Reflects all owner-approved decisions through Phase 3D.
+> **Status: PROPOSAL - Updated Phase 3F (2026-10-18). Not applied to Supabase.**
+> Reflects all owner-approved decisions through Phase 3F.
 > Do not apply any RLS policies until migration is authorized.
 
 ## Table of Contents
@@ -12,7 +12,9 @@
 - [Phase 3B Changes to Policies](#phase-3b-changes-to-policies)
 - [Phase 3C Changes to Policies](#phase-3c-changes-to-policies)
 - [Phase 3D Changes to Policies](#phase-3d-changes-to-policies)
+- [Phase 3F Changes to Policies](#phase-3f-changes-to-policies)
 - [Permission Matrices](#permission-matrices)
+- [Supabase Storage Policy Design](#supabase-storage-policy-design)
 - [Unresolved RLS Questions](#unresolved-rls-questions)
 - [Security Notes and Warnings](#security-notes-and-warnings)
 
@@ -183,13 +185,37 @@ Assignment must have status NOT IN ('cancelled', 'declined') for work_log INSERT
 
 ---
 
+## Phase 3F Changes to Policies
+
+### assignments - decline reason constraint (APPROVED OD-REC-1)
+
+Check constraint strengthened directly in the database to reject empty or whitespace-only strings:
+```sql
+CHECK (status != 'declined' OR (decline_reason IS NOT NULL AND btrim(decline_reason) != ''))
+```
+Prevents any bypass of non-empty decline reasons at the database level.
+
+### report_comments - SELECT permission for administrator and management (APPROVED OD-REC-2)
+
+- Operation: SELECT on `report_comments` updated to `ALLOW` for `administrator` and `management`.
+- Aligns comments visibility with the oversight access already established for `reports`, `report_attachments`, `report_status_history`, `assignments`, `work_logs`, and `verifications`.
+- Evaluated consistently with `can_view_report(report_id)`.
+
+### Supabase Storage Policy Design (APPROVED OD-REC-3)
+
+- Drafted complete `storage.objects` RLS policy design for private bucket `report-attachments`.
+- Synchronizes file download permissions with database metadata RLS and `can_view_report()`.
+- Immutability enforced (UPDATE DENY all; PD-D2); deletion restricted to backend worker service role.
+
+---
+
 ## Permission Matrices
 
 Legend:
 - ALLOW: operation is permitted
 - DENY: operation is denied
 - OWN: allowed on own records only
-- ASSIGNED: allowed on records linked to technician's qualifying assignments
+- ASSIGNED: allowed on records linked to technician's qualifying assignments (evaluated via can_view_report(report_id) for child tables: report_attachments, report_status_history, report_comments, and verifications)
 - COND: conditions noted below the table
 
 ---
@@ -309,13 +335,16 @@ Student INSERT: own report cancellation at submitted/under_review.
 
 | Operation | student_personnel | coordinator | technician | administrator | management |
 |---|---|---|---|---|---|
-| SELECT | OWN REPORTS | ALLOW | ASSIGNED REPORTS | DENY | DENY |
+| SELECT | OWN REPORTS | ALLOW | ASSIGNED REPORTS | ALLOW | ALLOW |
 | INSERT | ALLOW (own report) | ALLOW | ALLOW (qualifying assigned) | DENY | DENY |
 | UPDATE | DENY | DENY | DENY | DENY | DENY |
 | DELETE | DENY | DENY | DENY | DENY | DENY |
 
 Immutable (APPROVED PD-D3). UPDATE/DELETE DENY for all roles including admin.
 Technician INSERT: allowed on reports with qualifying (non-declined) assignment.
+SELECT (APPROVED OD-REC-2): student_personnel sees comments on own reports (`reports.reporter_id = auth.uid()`).
+Coordinator, administrator, and management see comments on all reports (matching general oversight).
+Technician sees comments on qualifying assigned reports (`can_view_report(report_id)`).
 
 ---
 
@@ -394,6 +423,129 @@ INSERT handled by application service role or trigger (PD-D6 RECOMMENDED).
 
 ---
 
+## Supabase Storage Policy Design (APPROVED OD-REC-3)
+
+While PostgreSQL Row Level Security secures `report_attachments` metadata, physical photo
+files reside in Supabase Storage (`storage.objects`). The following storage design and RLS
+policies govern bucket configuration and file operations.
+
+### Bucket Configuration
+
+- **Bucket ID / Name:** `report-attachments`
+- **Public Bucket:** `false` (Private bucket — all downloads require authorization via RLS or signed URLs)
+- **File Size Limit:** 10,485,760 bytes (10 MB, APPROVED PD-D5)
+- **Allowed MIME Types:** `image/jpeg`, `image/png`, `image/webp` (APPROVED PD-D5)
+
+### Storage Path Hierarchy
+
+Storage object names follow the canonical format:
+```
+reports/{report_id}/{attachment_id}.{ext}
+```
+Where:
+- `{report_id}` matches `reports.id` (UUID).
+- `{attachment_id}` matches `report_attachments.id` (UUID).
+- `{ext}` is the verified extension (`jpg`, `png`, `webp`).
+
+### Policies on storage.objects
+
+| Operation | student_personnel | coordinator | technician | administrator | management | service_role |
+|---|---|---|---|---|---|---|
+| **SELECT** (Download) | OWN REPORTS (Active) | ALLOW | ASSIGNED (Active) | ALLOW | ALLOW | ALLOW |
+| **INSERT** (Upload) | OWN REPORTS (<=5) | ALLOW (<=5) | ASSIGNED (<=5) | DENY | DENY | ALLOW |
+| **UPDATE** (Replace) | DENY | DENY | DENY | DENY | DENY | DENY |
+| **DELETE** (Physical) | DENY | DENY | DENY | DENY | DENY | ALLOW (Cleanup) |
+
+#### 1. SELECT Policy (Download / Read)
+```sql
+-- Pseudocode for storage.objects SELECT policy
+CREATE POLICY "storage_attachments_select" ON storage.objects
+FOR SELECT TO authenticated
+USING (
+  bucket_id = 'report-attachments'
+  AND (
+    -- Oversight roles see all attachments (active and soft-deleted for audit)
+    get_user_role() IN ('coordinator', 'administrator', 'management')
+    OR
+    -- Student reporters see only active attachments on their own reports
+    (
+      get_user_role() = 'student_personnel'
+      AND EXISTS (
+        SELECT 1 FROM report_attachments ra
+        JOIN reports r ON r.id = ra.report_id
+        WHERE ra.file_path = storage.objects.name
+          AND r.reporter_id = auth.uid()
+          AND ra.deleted_at IS NULL
+      )
+    )
+    OR
+    -- Technicians see only active attachments on qualifying assigned reports
+    (
+      get_user_role() = 'technician'
+      AND EXISTS (
+        SELECT 1 FROM report_attachments ra
+        WHERE ra.file_path = storage.objects.name
+          AND ra.deleted_at IS NULL
+          AND can_view_report(ra.report_id)
+      )
+    )
+  )
+);
+```
+
+#### 2. INSERT Policy (Upload)
+```sql
+-- Pseudocode for storage.objects INSERT policy
+CREATE POLICY "storage_attachments_insert" ON storage.objects
+FOR INSERT TO authenticated
+WITH CHECK (
+  bucket_id = 'report-attachments'
+  AND (
+    -- Coordinators may upload to any non-terminal report
+    get_user_role() = 'coordinator'
+    OR
+    -- Reporters may upload to own submitted/under_review reports
+    (
+      get_user_role() = 'student_personnel'
+      AND EXISTS (
+        SELECT 1 FROM reports r
+        WHERE r.id = (storage.foldername(name))[2]::uuid
+          AND r.reporter_id = auth.uid()
+          AND r.status IN ('submitted', 'under_review')
+      )
+    )
+    OR
+    -- Technicians may upload to reports with active assignment
+    (
+      get_user_role() = 'technician'
+      AND EXISTS (
+        SELECT 1 FROM assignments a
+        WHERE a.report_id = (storage.foldername(name))[2]::uuid
+          AND a.technician_id = auth.uid()
+          AND a.status IN ('assigned', 'in_progress', 'on_hold')
+      )
+    )
+  )
+  -- Active attachment count check (max 5 active per report, PD-D5)
+  AND (
+    SELECT count(*) FROM report_attachments ra
+    WHERE ra.report_id = (storage.foldername(name))[2]::uuid
+      AND ra.deleted_at IS NULL
+  ) < 5
+);
+```
+
+#### 3. UPDATE Policy (Immutable)
+- **DENY for ALL roles.**
+- File attachments cannot be modified, renamed, or replaced in-place (APPROVED PD-D2).
+
+#### 4. DELETE Policy (Hard Physical Deletion)
+- **DENY for ALL authenticated application roles** (`student_personnel`, `coordinator`, `technician`, `administrator`, `management`).
+- Hard deletion directly from clients is prohibited.
+- Physical storage removal is performed exclusively by the background retry worker running under the `service_role` after coordinator soft deletion (`deleted_at IS NOT NULL`).
+
+---
+
 ## Unresolved RLS Questions
 
 The following questions may require additional decisions before certain features are
@@ -407,15 +559,18 @@ fully implemented. They do not block core migration preparation.
 | Notification INSERT mechanism | notifications | PD-D6 RECOMMENDED application-level; no firm decision. |
 | Hard user deletion | profiles | PD-D8 OPEN; soft-deactivation assumed for MVP. |
 
-All decisions that blocked core schema, enum, constraint, and RLS preparation are now
+All decisions that blocked core schema, enum, constraint, RLS, and storage preparation are now
 OWNER APPROVED. The questions above affect specific features, not the migration baseline.
 
-Resolved through Phase 3B, 3C, and 3D:
+Resolved through Phase 3B, 3C, 3D, and 3F:
 - PD-R4 (self-verification), PD-R5 (reporter cancellation), PD-R3 (work holds): APPROVED.
 - PD-W1, W2, W3, W4: APPROVED.
 - PD-D2, D3 (immutability): APPROVED.
 - PD-R1, R2, R6: APPROVED.
 - OD-NEW-2 (soft deletion), OD-NEW-3 (decline reason), OD-NEW-4 (visibility predicate): APPROVED.
+- OD-REC-1 (decline reason btrim constraint): APPROVED.
+- OD-REC-2 (comment SELECT for administrator and management): APPROVED.
+- OD-REC-3 (Supabase Storage bucket and storage.objects RLS design): APPROVED.
 
 ---
 
@@ -436,7 +591,7 @@ The assignment decline operation should also be implemented as a SECURITY DEFINE
 or a tightly constrained UPDATE policy that:
 1. Only allows the transition from assigned to declined (USING: status = 'assigned').
 2. Only allows the technician to decline their own assignment (technician_id = auth.uid()).
-3. Requires a non-null decline_reason in the same operation.
+3. Requires a non-null, non-empty, non-whitespace decline_reason in the same operation (APPROVED OD-REC-1).
 4. Prevents any further UPDATE after declining (status = 'assigned' USING clause blocks it).
 
 ### can_view_report JOIN Performance
@@ -453,7 +608,8 @@ causes issues with Supabase RLS policy evaluation.
 
 ---
 
-*Phase 3D update 2026-10-18. All schema and RLS decisions are now owner-approved.*
+*Phase 3F update 2026-10-18. All schema, RLS, and storage design decisions are owner-approved.*
 *See OPEN_DECISIONS.md for all decisions.*
 *See SCHEMA_PROPOSAL.md for table definitions.*
 *See DATA_DICTIONARY.md for column-level definitions.*
+*See PHASE_3F_REVIEW.md for complete Phase 3F review.*

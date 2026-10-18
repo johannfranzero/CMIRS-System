@@ -74,14 +74,17 @@ Confirmed decisions from README.md treated as hard requirements:
 
 ---
 
-## Phase 3B, 3C, and 3D Decisions Applied
+## Phase 3B, 3C, 3D, and 3F Decisions Applied
 
 | Decision | Change Applied |
 |---|---|
 | OD-NEW-1 APPROVED | role_change_audit table included |
 | OD-NEW-2 APPROVED | report_attachments: deleted_at and deleted_by columns added for soft deletion; hard DELETE DENY all |
-| OD-NEW-3 APPROVED | assignments: decline_reason TEXT added; CHECK (status != 'declined' OR decline_reason IS NOT NULL) |
+| OD-NEW-3 APPROVED | assignments: decline_reason TEXT added; required on decline |
 | OD-NEW-4 APPROVED | Technician visibility predicate confirmed: any assignment with status != 'declined' |
+| OD-REC-1 APPROVED | assignments.decline_reason: check constraint rejects NULL, empty, and whitespace via btrim() |
+| OD-REC-2 APPROVED | report_comments: SELECT permitted for administrator and management roles |
+| OD-REC-3 APPROVED | Supabase Storage: report-attachments private bucket and storage.objects RLS design documented |
 | PD-D2 APPROVED | report_attachments immutable after upload; soft-delete via SECURITY DEFINER RPC |
 | PD-D3 APPROVED | report_comments: updated_at removed; T1 no longer on report_comments; UPDATE/DELETE DENY all |
 | PD-D4 APPROVED | T2 trigger: RPT-000001 via PostgreSQL SEQUENCE, concurrency-safe |
@@ -274,8 +277,9 @@ Key notes:
 - Per-report upload count limit (max 5, PD-D5) counts only active attachments:
   WHERE report_id = $1 AND deleted_at IS NULL.
 - Storage cleanup: after soft deletion, application attempts to delete the Storage object
-  (file_path). Failure does not affect the audit record. Retry via background job.
-  file_path is preserved in the row for retry purposes.
+  (file_path). Failure does not affect the audit record. Retry is managed by an
+  application-level background job (there is no storage_cleanup_completed column in
+  the database schema). file_path is preserved in the row for retry purposes.
 
 ---
 
@@ -329,20 +333,20 @@ Purpose: Links reports to assigned technicians. All records retained for audit t
 | started_at | TIMESTAMPTZ | | When technician started work |
 | completed_at | TIMESTAMPTZ | | When technician marked work complete |
 | notes | TEXT | | Assignment notes from coordinator to technician |
-| decline_reason | TEXT | CHECK (status != 'declined' OR decline_reason IS NOT NULL) | Technician's reason for declining (APPROVED OD-NEW-3). Required and non-empty when status = declined. NULL for all other statuses. Immutable once status = declined (terminal). |
+| decline_reason | TEXT | CHECK (status != 'declined' OR (decline_reason IS NOT NULL AND btrim(decline_reason) != '')) | Technician's reason for declining (APPROVED OD-NEW-3, OD-REC-1). Required, non-empty, and non-whitespace when status = declined. NULL for all other statuses. Immutable once status = declined (terminal). |
 
 Role constraints (application-enforced):
 - technician_id must reference a profile with role = technician.
 - assigned_by must reference a profile with role = coordinator.
 
-Decline process (APPROVED PD-R2, OD-NEW-3):
+Decline process (APPROVED PD-R2, OD-NEW-3, OD-REC-1):
 1. Technician initiates decline from assigned status only.
 2. Operation sets status = 'declined' and decline_reason = '<reason>'.
-3. Check constraint ensures decline_reason IS NOT NULL when status = 'declined'.
-4. Application enforces non-empty string.
-5. Declined assignment is preserved (not deleted).
-6. Coordinator is notified and creates a NEW assignment row for a different technician.
-7. An assignment can be declined at most once (terminal status). Single field sufficient.
+3. Check constraint ensures decline_reason IS NOT NULL AND btrim(decline_reason) != '' when status = 'declined'
+   (database-level check rejecting NULL, empty string, or whitespace-only values directly via btrim).
+4. Declined assignment is preserved (not deleted).
+5. Coordinator is notified and creates a NEW assignment row for a different technician.
+6. An assignment can be declined at most once (terminal status). Single field sufficient.
 
 Reassignment process:
 1. Coordinator creates new assignment record for new technician (new row).
@@ -557,7 +561,9 @@ SECURITY DEFINER.
 | 11 | All 5 roles can INSERT into reports | APPROVED PD-R6 | administrator and management now permitted reporters |
 | 12 | deleted_at on report_attachments | APPROVED OD-NEW-2 | Soft-delete timestamp; NULL = active |
 | 13 | deleted_by on report_attachments | APPROVED OD-NEW-2 | Coordinator who soft-deleted; FK -> profiles RESTRICT |
-| 14 | decline_reason on assignments | APPROVED OD-NEW-3 | Required when status = declined; CHECK constraint |
+| 14 | decline_reason on assignments | APPROVED OD-NEW-3, OD-REC-1 | Required when status = declined; CHECK constraint with btrim() |
+| 15 | report_comments SELECT for admin/management | APPROVED OD-REC-2 | Administrator and management granted read access to comments |
+| 16 | Supabase Storage bucket RLS design | APPROVED OD-REC-3 | Private bucket report-attachments with storage.objects RLS policies |
 
 ---
 
@@ -576,7 +582,7 @@ The following decisions do not block core migration preparation.
 | PD-W5 | OPEN | Maximum reopening count |
 | PD-W6 | RECOMMENDED | under_review always required |
 
-Open implementation questions (no formal ID yet):
+Open implementation questions:
 - Attachment deletion reason: the approved soft-delete records who and when but not why.
   If a justification is required for audit compliance, a new decision is needed.
 - assignment_declined notification type: not yet formally approved.
@@ -584,7 +590,8 @@ Open implementation questions (no formal ID yet):
 
 ---
 
-*Phase 3D update 2026-10-18. All schema decisions are now owner-approved.*
+*Phase 3F update 2026-10-18. All schema and RLS decisions are owner-approved.*
 *See OPEN_DECISIONS.md for all decisions.*
 *See RLS_POLICY_PROPOSAL.md for access control policies.*
 *See DATA_DICTIONARY.md for column-level definitions.*
+*See PHASE_3F_REVIEW.md for complete Phase 3F review.*

@@ -48,12 +48,15 @@ For each decision:
 | PD-W4 | WORKFLOW.md | **OWNER APPROVED** | On cancellation, mark all active assignments cancelled |
 | PD-W5 | WORKFLOW.md | OPEN | Maximum reopening count |
 | PD-W6 | WORKFLOW.md | RECOMMENDED | under_review not always required |
+| OD-REC-1 | Phase 3E audit | **OWNER APPROVED** | Strengthen decline_reason constraint to btrim != '' at DB level |
+| OD-REC-2 | Phase 3E audit | **OWNER APPROVED** | Administrator and management comment SELECT permitted |
+| OD-REC-3 | Phase 3E audit | **OWNER APPROVED** | Supabase Storage bucket and storage.objects RLS design documented |
 
-Migration-blocking status (Phase 3D):
+Migration-blocking status (Phase 3F):
 - No core schema, enum, constraint, or RLS decisions remain unresolved.
-- All OD-NEW-X gaps are now owner-approved and incorporated.
-- Remaining OPEN/RECOMMENDED decisions do not affect schema or RLS (see below).
-- Recommendation: the project is READY for migration preparation. See PHASE_3D_REVIEW.md.
+- All 19 owner decisions (OD-NEW-1 through OD-NEW-4, OD-REC-1 through OD-REC-3, PD-D2 through PD-D5, PD-R1, PD-R2, PD-R4, PD-R6, PD-W1 through PD-W4) are OWNER APPROVED.
+- Remaining OPEN/RECOMMENDED decisions do not block migration.
+- Migration status: READY FOR MIGRATION PREPARATION. See PHASE_3F_REVIEW.md.
 
 ---
 
@@ -243,8 +246,8 @@ before migration. No decision has been made on this question.
 4. If Storage deletion fails: the DB record still carries deleted_at (the attachment is
    inaccessible from the application). The file_path is preserved for retry.
 5. A background retry job queries report_attachments WHERE deleted_at IS NOT NULL
-   AND storage_cleanup_completed IS NULL (or equivalent application-level tracking)
-   and retries the Storage deletion.
+   (using application-level worker or queue tracking; no storage_cleanup_completed column
+   exists in the database schema) and retries the Storage deletion.
 6. A Storage cleanup failure does NOT affect the audit record (deleted_at, deleted_by
    remain set and immutable).
 7. Never perform Storage deletion inside a database transaction.
@@ -278,9 +281,8 @@ It is required (non-null, non-empty) when an assignment status is set to decline
 - Name: decline_reason
 - Type: TEXT
 - Nullable: Yes (NULL for all non-declined statuses)
-- Check constraint: CHECK (status != 'declined' OR decline_reason IS NOT NULL)
-  (database-level null guard)
-- Application-level validation: enforce non-empty string when status = 'declined'.
+- Check constraint: CHECK (status != 'declined' OR (decline_reason IS NOT NULL AND btrim(decline_reason) != ''))
+  (database-level constraint rejecting NULL, empty string, or whitespace; APPROVED OD-REC-1).
 
 **Workflow:**
 1. Coordinator creates assignment (status = assigned). decline_reason is NULL.
@@ -567,6 +569,52 @@ See Phase 3C section above.
 
 ---
 
-*Phase 3D update 2026-10-18. All schema decisions are now owner-approved.*
-*See PHASE_3D_REVIEW.md for complete Phase 3D change summary.*
-*All OPEN and RECOMMENDED decisions still require explicit owner approval before implementation.*
+## Phase 3F Owner-Approved Decisions
+
+### OD-REC-1 - Strengthen decline_reason Check Constraint
+
+**Source:** Phase 3E audit  
+**Status: OWNER APPROVED (2026-10-18)**  
+**Decision:** Strengthen the `assignments.decline_reason` constraint so that a declined assignment strictly requires a non-null, non-empty, and non-whitespace reason directly at the database level using `btrim()`.
+
+**Approved Check Constraint:**
+```sql
+CHECK (status != 'declined' OR (decline_reason IS NOT NULL AND btrim(decline_reason) != ''))
+```
+**Impact:** Rejects `NULL`, empty strings (`''`), and whitespace-only strings (`'   '`) at the PostgreSQL layer. Amends and hardens the earlier OD-NEW-3 decision. Schema proposal and data dictionary are updated to match.
+
+---
+
+### OD-REC-2 - Administrator and Management Comment Read Access
+
+**Source:** Phase 3E audit  
+**Status: OWNER APPROVED (2026-10-18)**  
+**Decision:** School Administrators and School Management may SELECT `report_comments`, subject to the same report-access boundaries and applicable RLS protections as other report child tables.
+
+**Policy Definition:**
+- `report_comments` SELECT is updated to `ALLOW` for `administrator` and `management`.
+- Matches the oversight visibility already granted to administrator and management on `reports`, `report_attachments`, `report_status_history`, `assignments`, `work_logs`, and `verifications`.
+- Evaluated consistently with `can_view_report(report_id)`.
+
+---
+
+### OD-REC-3 - Supabase Storage Bucket and storage.objects RLS Policy Design
+
+**Source:** Phase 3E audit  
+**Status: OWNER APPROVED (2026-10-18) (Documentation Only)**  
+**Decision:** Approve the proposed Supabase Storage bucket and `storage.objects` RLS policy design for documentation purposes before Phase 4 implementation. (No remote Supabase changes or connection).
+
+**Approved Design Summary:**
+- Bucket: `report-attachments` (private bucket; public access disabled).
+- Max file size: 10 MB (10485760 bytes).
+- Allowed MIME types: `image/jpeg`, `image/png`, `image/webp`.
+- `storage.objects` SELECT: Allowed for coordinator, administrator, management; allowed for reporter (own report) and technician (qualifying assigned report via `can_view_report()`) for active attachments (`deleted_at IS NULL`). Unauthenticated access denied.
+- `storage.objects` INSERT: Authenticated users upload to valid report paths with size/type validation and <= 5 active attachments per report.
+- `storage.objects` UPDATE: DENY all (files are immutable; PD-D2).
+- `storage.objects` DELETE: DENY for all application client roles; allowed only for service_role background cleanup jobs after soft deletion.
+
+---
+
+*Phase 3F update 2026-10-18. All core schema, RLS, and storage design decisions are owner-approved.*
+*See PHASE_3F_REVIEW.md for complete Phase 3F review and reconciliation summary.*
+*All remaining OPEN and RECOMMENDED decisions (PD-D1, PD-D6 through PD-D10, PD-S1 through PD-S4, PD-W5, PD-W6) do not block core migration preparation.*
