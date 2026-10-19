@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Sidebar } from './sidebar';
 import { Header } from './header';
 import { MobileNav } from './mobile-nav';
@@ -14,12 +14,16 @@ export function AppShell({ children, pageTitle = 'Campus Operations' }: AppShell
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
+  const handleOpenMobileNav = useCallback(() => setIsMobileNavOpen(true), []);
+  const handleCloseMobileNav = useCallback(() => setIsMobileNavOpen(false), []);
+  const handleToggleSidebar = useCallback(() => setIsSidebarCollapsed((prev) => !prev), []);
+
   return (
-    <div className="min-h-screen bg-slate-50/70 flex">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex">
       {/* Desktop Collapsible Sidebar */}
       <Sidebar
         isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+        onToggleCollapse={handleToggleSidebar}
       />
 
       {/* Main Column */}
@@ -27,7 +31,7 @@ export function AppShell({ children, pageTitle = 'Campus Operations' }: AppShell
         {/* Top Header */}
         <Header
           title={pageTitle}
-          onOpenMobileMenu={() => setIsMobileNavOpen(true)}
+          onOpenMobileMenu={handleOpenMobileNav}
         />
 
         {/* Content Container */}
@@ -39,8 +43,8 @@ export function AppShell({ children, pageTitle = 'Campus Operations' }: AppShell
       {/* Mobile Bottom Navigation & Slide-out Drawer */}
       <MobileNav
         isOpen={isMobileNavOpen}
-        onClose={() => setIsMobileNavOpen(false)}
-        onOpen={() => setIsMobileNavOpen(true)}
+        onClose={handleCloseMobileNav}
+        onOpen={handleOpenMobileNav}
       />
     </div>
   );

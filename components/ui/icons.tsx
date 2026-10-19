@@ -1,17 +1,28 @@
 import React from 'react';
 
-interface IconProps extends React.SVGProps<SVGSVGElement> {
+export interface IconProps extends React.SVGProps<SVGSVGElement> {
   className?: string;
   size?: number;
 }
 
-export function CmirsLogo({ className = 'w-6 h-6', ...props }: IconProps) {
+function resolveIconClass(className: string | undefined, defaultSize: string): string {
+  if (!className) return defaultSize;
+  // If the passed className already specifies width and height, use it; otherwise prepend default size
+  const hasWidth = /\bw-\S+/.test(className);
+  const hasHeight = /\bh-\S+/.test(className);
+  if (hasWidth && hasHeight) return className;
+  return `${defaultSize} ${className}`.trim();
+}
+
+export function CmirsLogo({ className, size = 32, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 32 32"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={className}
+      className={resolveIconClass(className, 'w-8 h-8')}
       aria-hidden="true"
       {...props}
     >
@@ -35,16 +46,18 @@ export function CmirsLogo({ className = 'w-6 h-6', ...props }: IconProps) {
   );
 }
 
-export function DashboardIcon({ className = 'w-5 h-5', ...props }: IconProps) {
+export function DashboardIcon({ className, size = 20, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-5 h-5')}
       aria-hidden="true"
       {...props}
     >
@@ -56,16 +69,18 @@ export function DashboardIcon({ className = 'w-5 h-5', ...props }: IconProps) {
   );
 }
 
-export function ReportsIcon({ className = 'w-5 h-5', ...props }: IconProps) {
+export function ReportsIcon({ className, size = 20, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-5 h-5')}
       aria-hidden="true"
       {...props}
     >
@@ -78,16 +93,18 @@ export function ReportsIcon({ className = 'w-5 h-5', ...props }: IconProps) {
   );
 }
 
-export function PlusCircleIcon({ className = 'w-5 h-5', ...props }: IconProps) {
+export function PlusCircleIcon({ className, size = 20, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-5 h-5')}
       aria-hidden="true"
       {...props}
     >
@@ -98,16 +115,18 @@ export function PlusCircleIcon({ className = 'w-5 h-5', ...props }: IconProps) {
   );
 }
 
-export function LocationsIcon({ className = 'w-5 h-5', ...props }: IconProps) {
+export function LocationsIcon({ className, size = 20, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-5 h-5')}
       aria-hidden="true"
       {...props}
     >
@@ -117,16 +136,18 @@ export function LocationsIcon({ className = 'w-5 h-5', ...props }: IconProps) {
   );
 }
 
-export function AnalyticsIcon({ className = 'w-5 h-5', ...props }: IconProps) {
+export function AnalyticsIcon({ className, size = 20, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-5 h-5')}
       aria-hidden="true"
       {...props}
     >
@@ -137,16 +158,18 @@ export function AnalyticsIcon({ className = 'w-5 h-5', ...props }: IconProps) {
   );
 }
 
-export function SettingsIcon({ className = 'w-5 h-5', ...props }: IconProps) {
+export function SettingsIcon({ className, size = 20, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-5 h-5')}
       aria-hidden="true"
       {...props}
     >
@@ -156,16 +179,18 @@ export function SettingsIcon({ className = 'w-5 h-5', ...props }: IconProps) {
   );
 }
 
-export function BellIcon({ className = 'w-5 h-5', ...props }: IconProps) {
+export function BellIcon({ className, size = 20, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-5 h-5')}
       aria-hidden="true"
       {...props}
     >
@@ -175,16 +200,18 @@ export function BellIcon({ className = 'w-5 h-5', ...props }: IconProps) {
   );
 }
 
-export function SearchIcon({ className = 'w-5 h-5', ...props }: IconProps) {
+export function SearchIcon({ className, size = 18, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -194,16 +221,18 @@ export function SearchIcon({ className = 'w-5 h-5', ...props }: IconProps) {
   );
 }
 
-export function FilterIcon({ className = 'w-5 h-5', ...props }: IconProps) {
+export function FilterIcon({ className, size = 18, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -212,16 +241,18 @@ export function FilterIcon({ className = 'w-5 h-5', ...props }: IconProps) {
   );
 }
 
-export function MenuIcon({ className = 'w-6 h-6', ...props }: IconProps) {
+export function MenuIcon({ className, size = 24, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-6 h-6')}
       aria-hidden="true"
       {...props}
     >
@@ -232,16 +263,18 @@ export function MenuIcon({ className = 'w-6 h-6', ...props }: IconProps) {
   );
 }
 
-export function CloseIcon({ className = 'w-6 h-6', ...props }: IconProps) {
+export function CloseIcon({ className, size = 24, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-6 h-6')}
       aria-hidden="true"
       {...props}
     >
@@ -251,16 +284,18 @@ export function CloseIcon({ className = 'w-6 h-6', ...props }: IconProps) {
   );
 }
 
-export function ChevronRightIcon({ className = 'w-4 h-4', ...props }: IconProps) {
+export function ChevronRightIcon({ className, size = 16, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -269,16 +304,18 @@ export function ChevronRightIcon({ className = 'w-4 h-4', ...props }: IconProps)
   );
 }
 
-export function ChevronLeftIcon({ className = 'w-4 h-4', ...props }: IconProps) {
+export function ChevronLeftIcon({ className, size = 16, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -287,16 +324,18 @@ export function ChevronLeftIcon({ className = 'w-4 h-4', ...props }: IconProps) 
   );
 }
 
-export function ChevronDownIcon({ className = 'w-4 h-4', ...props }: IconProps) {
+export function ChevronDownIcon({ className, size = 16, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -305,16 +344,18 @@ export function ChevronDownIcon({ className = 'w-4 h-4', ...props }: IconProps) 
   );
 }
 
-export function ExclamationTriangleIcon({ className = 'w-4 h-4', ...props }: IconProps) {
+export function ExclamationTriangleIcon({ className, size = 16, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -325,16 +366,18 @@ export function ExclamationTriangleIcon({ className = 'w-4 h-4', ...props }: Ico
   );
 }
 
-export function CheckCircleIcon({ className = 'w-4 h-4', ...props }: IconProps) {
+export function CheckCircleIcon({ className, size = 16, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -344,16 +387,18 @@ export function CheckCircleIcon({ className = 'w-4 h-4', ...props }: IconProps) 
   );
 }
 
-export function ClockIcon({ className = 'w-4 h-4', ...props }: IconProps) {
+export function ClockIcon({ className, size = 16, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -363,16 +408,18 @@ export function ClockIcon({ className = 'w-4 h-4', ...props }: IconProps) {
   );
 }
 
-export function WrenchIcon({ className = 'w-4 h-4', ...props }: IconProps) {
+export function WrenchIcon({ className, size = 16, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -381,16 +428,18 @@ export function WrenchIcon({ className = 'w-4 h-4', ...props }: IconProps) {
   );
 }
 
-export function UserIcon({ className = 'w-4 h-4', ...props }: IconProps) {
+export function UserIcon({ className, size = 16, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -400,16 +449,18 @@ export function UserIcon({ className = 'w-4 h-4', ...props }: IconProps) {
   );
 }
 
-export function BuildingIcon({ className = 'w-4 h-4', ...props }: IconProps) {
+export function BuildingIcon({ className, size = 16, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >
@@ -428,16 +479,18 @@ export function BuildingIcon({ className = 'w-4 h-4', ...props }: IconProps) {
   );
 }
 
-export function ArrowUpRightIcon({ className = 'w-4 h-4', ...props }: IconProps) {
+export function ArrowUpRightIcon({ className, size = 16, ...props }: IconProps) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={resolveIconClass(className, 'w-4 h-4')}
       aria-hidden="true"
       {...props}
     >

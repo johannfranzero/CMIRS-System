@@ -53,7 +53,7 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
             size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-xs sm:text-sm px-2.5 py-1'
           }`}
         >
-          <ClockIcon className="w-3.5 h-3.5 text-amber-600" />
+          <ClockIcon size={14} className="w-3.5 h-3.5 text-amber-600 shrink-0" />
           <span>Submitted</span>
         </span>
       );
@@ -64,7 +64,7 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
             size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-xs sm:text-sm px-2.5 py-1'
           }`}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse shrink-0" />
           <span>Under Review</span>
         </span>
       );
@@ -75,7 +75,7 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
             size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-xs sm:text-sm px-2.5 py-1'
           }`}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
           <span>Assigned</span>
         </span>
       );
@@ -86,7 +86,7 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
             size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-xs sm:text-sm px-2.5 py-1'
           }`}
         >
-          <WrenchIcon className="w-3.5 h-3.5 text-blue-600" />
+          <WrenchIcon size={14} className="w-3.5 h-3.5 text-blue-600 shrink-0" />
           <span>In Progress</span>
         </span>
       );
@@ -97,7 +97,7 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
             size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-xs sm:text-sm px-2.5 py-1'
           }`}
         >
-          <ClockIcon className="w-3.5 h-3.5 text-orange-500" />
+          <ClockIcon size={14} className="w-3.5 h-3.5 text-orange-500 shrink-0" />
           <span>On Hold</span>
         </span>
       );
@@ -108,7 +108,7 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
             size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-xs sm:text-sm px-2.5 py-1'
           }`}
         >
-          <CheckCircleIcon className="w-3.5 h-3.5 text-teal-600" />
+          <CheckCircleIcon size={14} className="w-3.5 h-3.5 text-teal-600 shrink-0" />
           <span>Completed</span>
         </span>
       );
@@ -119,7 +119,7 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
             size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-xs sm:text-sm px-2.5 py-1'
           }`}
         >
-          <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-600" />
+          <CheckCircleIcon size={14} className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           <span>Verified Closed</span>
         </span>
       );
@@ -130,7 +130,7 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
             size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-xs sm:text-sm px-2.5 py-1'
           }`}
         >
-          <ExclamationTriangleIcon className="w-3.5 h-3.5 text-rose-600" />
+          <ExclamationTriangleIcon size={14} className="w-3.5 h-3.5 text-rose-600 shrink-0" />
           <span>Reopened</span>
         </span>
       );
@@ -183,7 +183,7 @@ export function PriorityBadge({ priority, isUrgentHazard = false }: PriorityBadg
       <span
         className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold border ${config.bg}`}
       >
-        <span className={`w-1.5 h-1.5 rounded-full ${config.dot}`} />
+        <span className={`w-1.5 h-1.5 rounded-full ${config.dot} shrink-0`} />
         <span>{config.label}</span>
       </span>
 
@@ -192,7 +192,7 @@ export function PriorityBadge({ priority, isUrgentHazard = false }: PriorityBadg
           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-semibold bg-rose-100 text-rose-900 border border-rose-300"
           title="Reporter flagged as urgent safety hazard"
         >
-          <ExclamationTriangleIcon className="w-3 h-3 text-rose-700" />
+          <ExclamationTriangleIcon size={12} className="w-3 h-3 text-rose-700 shrink-0" />
           <span>Urgent</span>
         </span>
       )}

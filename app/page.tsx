@@ -63,7 +63,7 @@ export default function DashboardPage() {
             title="Total Active"
             value={MOCK_STATS.totalActive}
             description="Across 5 campus buildings"
-            icon={<ReportsIcon className="w-5 h-5 text-indigo-600" />}
+            icon={<ReportsIcon size={20} className="w-5 h-5 text-indigo-600 shrink-0" />}
             variant="default"
           />
 
@@ -71,7 +71,7 @@ export default function DashboardPage() {
             title="Pending Triage"
             value={MOCK_STATS.pendingReview}
             description="Awaiting coordinator review"
-            icon={<ClockIcon className="w-5 h-5 text-amber-600" />}
+            icon={<ClockIcon size={20} className="w-5 h-5 text-amber-600 shrink-0" />}
             variant="amber"
           />
 
@@ -79,7 +79,7 @@ export default function DashboardPage() {
             title="In Progress"
             value={MOCK_STATS.inProgress}
             description="Assigned to field technicians"
-            icon={<WrenchIcon className="w-5 h-5 text-blue-600" />}
+            icon={<WrenchIcon size={20} className="w-5 h-5 text-blue-600 shrink-0" />}
             variant="blue"
           />
 
@@ -87,7 +87,7 @@ export default function DashboardPage() {
             title="Critical Hazards"
             value={MOCK_STATS.urgentHazards}
             description="Immediate safety risk flagged"
-            icon={<ExclamationTriangleIcon className="w-5 h-5 text-rose-600" />}
+            icon={<ExclamationTriangleIcon size={20} className="w-5 h-5 text-rose-600 shrink-0" />}
             variant="rose"
             urgentAlert={true}
           />
@@ -118,7 +118,7 @@ export default function DashboardPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-bold flex items-center gap-2">
-                    <BuildingIcon className="w-4 h-4 text-indigo-600" />
+                    <BuildingIcon size={16} className="w-4 h-4 text-indigo-600 shrink-0" />
                     <span>Campus Facilities</span>
                   </CardTitle>
                   <span className="text-[11px] font-semibold text-slate-400">
@@ -174,7 +174,7 @@ export default function DashboardPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-bold flex items-center gap-2">
-                    <UserIcon className="w-4 h-4 text-indigo-600" />
+                    <UserIcon size={16} className="w-4 h-4 text-indigo-600 shrink-0" />
                     <span>Technicians On Duty</span>
                   </CardTitle>
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -232,7 +232,7 @@ export default function DashboardPage() {
             <Card className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white border-transparent">
               <CardContent className="p-5">
                 <div className="flex items-center gap-2 text-indigo-300 text-xs font-semibold uppercase tracking-wider">
-                  <CheckCircleIcon className="w-4 h-4 text-emerald-400" />
+                  <CheckCircleIcon size={16} className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span>Resolution SLA</span>
                 </div>
                 <div className="mt-2 text-2xl font-bold">

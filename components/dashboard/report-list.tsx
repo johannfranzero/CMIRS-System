@@ -72,13 +72,13 @@ export function ReportList({ reports }: ReportListProps) {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 w-full">
       {/* Search and Filters Toolbar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         {/* Search input */}
         <div className="relative flex-1 max-w-md">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-            <SearchIcon className="w-4 h-4" />
+            <SearchIcon size={16} className="w-4 h-4 shrink-0" />
           </div>
           <input
             type="search"
@@ -92,12 +92,12 @@ export function ReportList({ reports }: ReportListProps) {
 
         {/* Category selector */}
         <div className="flex items-center gap-2">
-          <div className="relative inline-flex items-center">
-            <FilterIcon className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+          <div className="relative inline-flex items-center w-full sm:w-auto">
+            <FilterIcon size={16} className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none shrink-0" />
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="pl-9 pr-8 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent appearance-none cursor-pointer"
+              className="w-full sm:w-auto pl-9 pr-8 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent appearance-none cursor-pointer"
               aria-label="Filter by category"
             >
               <option value="all">All Categories</option>
@@ -113,10 +113,10 @@ export function ReportList({ reports }: ReportListProps) {
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs sm:text-sm font-medium border-b border-slate-200">
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs sm:text-sm font-medium border-b border-slate-200 -mx-1 px-1">
         <button
           onClick={() => setStatusFilter('all')}
-          className={`px-3 py-2 rounded-t-lg transition-colors border-b-2 whitespace-nowrap ${
+          className={`px-3 py-2 rounded-t-lg transition-colors border-b-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 ${
             statusFilter === 'all'
               ? 'border-indigo-600 text-indigo-700 font-semibold bg-indigo-50/40'
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
@@ -126,18 +126,18 @@ export function ReportList({ reports }: ReportListProps) {
         </button>
         <button
           onClick={() => setStatusFilter('urgent')}
-          className={`px-3 py-2 rounded-t-lg transition-colors border-b-2 whitespace-nowrap flex items-center gap-1.5 ${
+          className={`px-3 py-2 rounded-t-lg transition-colors border-b-2 whitespace-nowrap flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 ${
             statusFilter === 'urgent'
               ? 'border-rose-600 text-rose-800 font-semibold bg-rose-50/40'
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          <span className="w-2 h-2 rounded-full bg-rose-500" />
+          <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
           Urgent & Critical
         </button>
         <button
           onClick={() => setStatusFilter('pending')}
-          className={`px-3 py-2 rounded-t-lg transition-colors border-b-2 whitespace-nowrap ${
+          className={`px-3 py-2 rounded-t-lg transition-colors border-b-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 ${
             statusFilter === 'pending'
               ? 'border-indigo-600 text-indigo-700 font-semibold bg-indigo-50/40'
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
@@ -147,7 +147,7 @@ export function ReportList({ reports }: ReportListProps) {
         </button>
         <button
           onClick={() => setStatusFilter('in_progress')}
-          className={`px-3 py-2 rounded-t-lg transition-colors border-b-2 whitespace-nowrap ${
+          className={`px-3 py-2 rounded-t-lg transition-colors border-b-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 ${
             statusFilter === 'in_progress'
               ? 'border-indigo-600 text-indigo-700 font-semibold bg-indigo-50/40'
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
@@ -157,7 +157,7 @@ export function ReportList({ reports }: ReportListProps) {
         </button>
         <button
           onClick={() => setStatusFilter('completed')}
-          className={`px-3 py-2 rounded-t-lg transition-colors border-b-2 whitespace-nowrap ${
+          className={`px-3 py-2 rounded-t-lg transition-colors border-b-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 ${
             statusFilter === 'completed'
               ? 'border-indigo-600 text-indigo-700 font-semibold bg-indigo-50/40'
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
@@ -213,7 +213,7 @@ export function ReportList({ reports }: ReportListProps) {
                     key={report.id}
                     className="hover:bg-slate-50/80 transition-colors group cursor-default"
                   >
-                    <td className="px-4 py-3.5 font-mono text-xs font-semibold text-indigo-700">
+                    <td className="px-4 py-3.5 font-mono text-xs font-semibold text-indigo-700 whitespace-nowrap">
                       {report.trackingNumber}
                     </td>
 
@@ -228,7 +228,7 @@ export function ReportList({ reports }: ReportListProps) {
 
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1.5 text-slate-800">
-                        <BuildingIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <BuildingIcon size={14} className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span className="font-medium">{report.location.building}</span>
                       </div>
                       <div className="text-xs text-slate-500 pl-5">
@@ -247,10 +247,10 @@ export function ReportList({ reports }: ReportListProps) {
                       <StatusBadge status={report.status} />
                     </td>
 
-                    <td className="px-4 py-3.5 text-xs text-slate-700">
+                    <td className="px-4 py-3.5 text-xs text-slate-700 whitespace-nowrap">
                       {report.assignedTechnician ? (
                         <div className="flex items-center gap-1.5">
-                          <UserIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <UserIcon size={14} className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                           <span className="font-medium text-slate-800">{report.assignedTechnician}</span>
                         </div>
                       ) : (
@@ -298,22 +298,22 @@ export function ReportList({ reports }: ReportListProps) {
 
               <div className="flex flex-col gap-1.5 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                 <div className="flex items-center gap-1.5 text-slate-800">
-                  <BuildingIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="font-medium">{report.location.building}</span>
+                  <BuildingIcon size={14} className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="font-medium truncate">{report.location.building}</span>
                   {report.location.room && (
-                    <span className="text-slate-500">• Room {report.location.room}</span>
+                    <span className="text-slate-500 shrink-0">• Room {report.location.room}</span>
                   )}
                 </div>
-                <div className="flex items-center justify-between text-slate-500 text-[11px]">
-                  <span>Category: {report.category}</span>
-                  <span>{formatDate(report.createdAt)}</span>
+                <div className="flex items-center justify-between text-slate-500 text-[11px] gap-2 flex-wrap">
+                  <span className="truncate">Category: {report.category}</span>
+                  <span className="shrink-0">{formatDate(report.createdAt)}</span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100 gap-2 flex-wrap">
                 <StatusBadge status={report.status} />
-                <div className="text-xs text-slate-600 flex items-center gap-1">
-                  <UserIcon className="w-3.5 h-3.5 text-slate-400" />
+                <div className="text-xs text-slate-600 flex items-center gap-1 shrink-0">
+                  <UserIcon size={14} className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <span>{report.assignedTechnician || 'Unassigned'}</span>
                 </div>
               </div>

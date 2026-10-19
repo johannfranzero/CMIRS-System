@@ -52,7 +52,7 @@ export function StatCard({
         </div>
 
         <div
-          className={`shrink-0 p-3 rounded-lg border ${iconTheme[variant]} flex items-center justify-center`}
+          className={`shrink-0 w-11 h-11 rounded-lg border ${iconTheme[variant]} flex items-center justify-center`}
           aria-hidden="true"
         >
           {icon}
