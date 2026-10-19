@@ -1,4 +1,4 @@
-import Link from 'react';
+import Link from 'next/link';
 import { AppShell } from '@/components/layout/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';

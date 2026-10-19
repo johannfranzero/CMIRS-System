@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { MaintenanceReport } from '@/types/reports';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
-import { SearchIcon, FilterIcon, BuildingIcon, UserIcon, ArrowUpRightIcon } from '@/components/ui/icons';
+import { SearchIcon, FilterIcon, BuildingIcon, UserIcon } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/empty-state';
 
 interface ReportListProps {
