@@ -90,10 +90,53 @@ export interface SeedReferences {
 // 2. Constants & Fixtures
 // =============================================================================
 
+export const EXPECTED_PROJECT_REF = 'xyirfifvcntuzceivtho';
+export const EXPECTED_HOSTNAME = `${EXPECTED_PROJECT_REF}.supabase.co`;
+
+export const CANONICAL_UUID_REGEX =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+export const CANONICAL_STORAGE_PATH_REGEX =
+  /^reports\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(jpe?g|png|webp)$/;
+
+export function isValidUuid(id: unknown): id is string {
+  return typeof id === 'string' && CANONICAL_UUID_REGEX.test(id.trim());
+}
+
+export function isValidStoragePath(p: unknown): p is string {
+  return typeof p === 'string' && CANONICAL_STORAGE_PATH_REGEX.test(p.trim());
+}
+
+export function validateTargetSupabaseUrl(urlStr: string): string {
+  if (!urlStr || typeof urlStr !== 'string') {
+    throw new Error('Supabase URL must be a non-empty string.');
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr);
+  } catch (err) {
+    throw new Error(`Invalid Supabase URL format: ${(err as Error).message}`);
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`Insecure or invalid protocol '${parsed.protocol}'. Expected 'https:'.`);
+  }
+
+  // Exact hostname match against designated project reference
+  if (parsed.hostname.toLowerCase() !== EXPECTED_HOSTNAME.toLowerCase()) {
+    throw new Error(
+      `SAFETY VIOLATION: Target hostname '${parsed.hostname}' does not match designated project reference '${EXPECTED_PROJECT_REF}'. Expected '${EXPECTED_HOSTNAME}'. Remote execution aborted.`
+    );
+  }
+
+  return parsed.origin;
+}
+
 const RUN_ID = `RUN-${Date.now()}`;
 const FIXTURE_PREFIX = `[TEST-E4A-${RUN_ID}]`;
-const LEDGER_FILE_PATH = path.join(process.cwd(), 'tests', 'integration', '.rls-run-ledger.json');
-const CLEANUP_SQL_PATH = path.join(process.cwd(), 'tests', 'integration', `cleanup_${RUN_ID}.sql`);
+export const LEDGER_FILE_PATH = path.join(process.cwd(), 'tests', 'integration', '.rls-run-ledger.json');
+export const CLEANUP_SQL_PATH = path.join(process.cwd(), 'tests', 'integration', `cleanup_${RUN_ID}.sql`);
 
 // 1x1 transparent PNG byte buffer (68 bytes) for clean Storage API testing
 const DUMMY_PNG_BUFFER = Buffer.from(
@@ -105,10 +148,10 @@ const DUMMY_PNG_BUFFER = Buffer.from(
 // 3. Credential & Environment Loader
 // =============================================================================
 
-function loadEnvironment(): {
+export function loadEnvironment(requirePassword = true): {
   supabaseUrl: string;
   publishableKey: string;
-  testPassword: string;
+  testPassword?: string;
   serviceRoleKey?: string;
 } {
   // Check for local env files if process.env is missing values
@@ -133,18 +176,21 @@ function loadEnvironment(): {
     }
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const testPassword = process.env.CMIRS_TEST_PASSWORD;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl || !publishableKey) {
+  if (!rawUrl || !publishableKey) {
     throw new Error(
       'Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.'
     );
   }
 
-  if (!testPassword) {
+  // Enforce Patch 1: Strict project reference and hostname validation
+  const supabaseUrl = validateTargetSupabaseUrl(rawUrl);
+
+  if (requirePassword && !testPassword) {
     throw new Error(
       'Missing CMIRS_TEST_PASSWORD. Set this variable in process.env or .env.test.local before running.'
     );
@@ -157,7 +203,7 @@ function loadEnvironment(): {
 // 4. Ledger Management (Failure-Proof Teardown)
 // =============================================================================
 
-function initializeLedger(): FixtureLedger {
+export function initializeLedger(): FixtureLedger {
   const ledger: FixtureLedger = {
     runId: RUN_ID,
     startedAt: new Date().toISOString(),
@@ -175,7 +221,7 @@ function initializeLedger(): FixtureLedger {
   return ledger;
 }
 
-function saveLedger(ledger: FixtureLedger): void {
+export function saveLedger(ledger: FixtureLedger): void {
   try {
     const dir = path.dirname(LEDGER_FILE_PATH);
     if (!fs.existsSync(dir)) {
@@ -185,6 +231,119 @@ function saveLedger(ledger: FixtureLedger): void {
   } catch (err) {
     console.error('[LEDGER ERROR] Failed to persist run ledger:', (err as Error).message);
   }
+}
+
+export function loadAndValidateLedger(filePath: string): FixtureLedger {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Ledger file does not exist at '${filePath}'.`);
+  }
+
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    throw new Error(`Failed to read ledger file: ${(err as Error).message}`);
+  }
+
+  if (!raw.trim()) {
+    throw new Error(`Ledger file at '${filePath}' is empty.`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`Ledger file contains invalid JSON: ${(err as Error).message}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Ledger root structure must be a JSON object.');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+
+  if (typeof obj.runId !== 'string' || !obj.runId.trim()) {
+    throw new Error('Ledger is missing valid runId.');
+  }
+
+  // Strictly filter and validate reports by canonical UUID
+  const validReports: Array<{ id: string; title: string; reporterId: string }> = [];
+  if (Array.isArray(obj.reports)) {
+    for (const r of obj.reports) {
+      if (r && typeof r === 'object') {
+        const rObj = r as Record<string, unknown>;
+        if (isValidUuid(rObj.id)) {
+          validReports.push({
+            id: (rObj.id as string).trim(),
+            title: typeof rObj.title === 'string' ? rObj.title : '',
+            reporterId: isValidUuid(rObj.reporterId) ? (rObj.reporterId as string).trim() : '',
+          });
+        } else {
+          console.warn(`[LEDGER WARNING] Ignoring out-of-scope or malformed report UUID: ${String(rObj.id)}`);
+        }
+      }
+    }
+  }
+
+  // Strictly filter and validate storage paths by canonical regex
+  const validStoragePaths: string[] = [];
+  if (Array.isArray(obj.storagePaths)) {
+    for (const p of obj.storagePaths) {
+      if (isValidStoragePath(p)) {
+        validStoragePaths.push((p as string).trim());
+      } else {
+        console.warn(`[LEDGER WARNING] Ignoring out-of-scope or malformed storage path: ${String(p)}`);
+      }
+    }
+  }
+
+  // Validate assignments
+  const validAssignments: Array<{ id: string; reportId: string }> = [];
+  if (Array.isArray(obj.assignments)) {
+    for (const a of obj.assignments) {
+      if (a && typeof a === 'object') {
+        const aObj = a as Record<string, unknown>;
+        if (isValidUuid(aObj.id)) {
+          validAssignments.push({
+            id: (aObj.id as string).trim(),
+            reportId: isValidUuid(aObj.reportId) ? (aObj.reportId as string).trim() : '',
+          });
+        }
+      }
+    }
+  }
+
+  // Validate attachments
+  const validAttachments: Array<{ id: string; reportId: string; filePath: string }> = [];
+  if (Array.isArray(obj.attachments)) {
+    for (const att of obj.attachments) {
+      if (att && typeof att === 'object') {
+        const attObj = att as Record<string, unknown>;
+        if (isValidUuid(attObj.id)) {
+          validAttachments.push({
+            id: (attObj.id as string).trim(),
+            reportId: isValidUuid(attObj.reportId) ? (attObj.reportId as string).trim() : '',
+            filePath: typeof attObj.filePath === 'string' ? attObj.filePath : '',
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    runId: obj.runId as string,
+    startedAt: typeof obj.startedAt === 'string' ? obj.startedAt : new Date().toISOString(),
+    completedAt: typeof obj.completedAt === 'string' ? obj.completedAt : undefined,
+    reports: validReports,
+    assignments: validAssignments,
+    attachments: validAttachments,
+    storagePaths: validStoragePaths,
+    comments: Array.isArray(obj.comments) ? (obj.comments as Array<{ id: string; reportId: string }>) : [],
+    workLogs: Array.isArray(obj.workLogs) ? (obj.workLogs as Array<{ id: string; assignmentId: string }>) : [],
+    verifications: Array.isArray(obj.verifications) ? (obj.verifications as Array<{ id: string; reportId: string }>) : [],
+    notifications: Array.isArray(obj.notifications) ? (obj.notifications as Array<{ id: string; recipientId: string }>) : [],
+    profileRestores: Array.isArray(obj.profileRestores) ? (obj.profileRestores as Array<{ id: string; originalFullName: string }>) : [],
+  };
 }
 
 // =============================================================================
@@ -1830,108 +1989,211 @@ export class RlsTestSuite {
 // 9. Deterministic Cleanup & Teardown Protocol
 // =============================================================================
 
+export interface TeardownResult {
+  success: boolean;
+  purgedStorage: number;
+  purgedReports: number;
+  requiresManualSql: boolean;
+  cleanupSqlPath?: string;
+  retainedLedgerPath?: string;
+  message: string;
+}
+
 export async function performTeardown(
   ledger: FixtureLedger,
   pool: ClientPool,
   verbose = true
-): Promise<{ success: boolean; purgedStorage: number; purgedReports: number }> {
+): Promise<TeardownResult> {
   if (verbose) {
     console.log('\n[TEARDOWN] Initiating deterministic fixture cleanup...');
     console.log(`[TEARDOWN] Tracked storage paths: ${ledger.storagePaths.length}`);
     console.log(`[TEARDOWN] Tracked report fixtures: ${ledger.reports.length}`);
   }
 
+  // Filter and validate strictly by canonical regexes to prevent invalid/unsafe SQL interpolation
+  const safeStoragePaths = ledger.storagePaths.filter(isValidStoragePath);
+  const safeReportIds = ledger.reports.map((r) => r.id).filter(isValidUuid);
+
   let purgedStorage = 0;
   let purgedReports = 0;
+  let requiresManualSql = false;
 
   // Step 1: Storage API Cleanup
-  if (ledger.storagePaths.length > 0) {
+  if (safeStoragePaths.length > 0) {
     if (pool.adminTeardown) {
       if (verbose) console.log('[TEARDOWN] Purging storage objects via admin teardown client...');
       const { data, error } = await pool.adminTeardown.storage
         .from('report-attachments')
-        .remove(ledger.storagePaths);
+        .remove(safeStoragePaths);
       if (error) {
         console.error('[TEARDOWN WARNING] Storage purge returned error:', error.message);
+        requiresManualSql = true;
       } else {
-        purgedStorage = data?.length || ledger.storagePaths.length;
+        purgedStorage = data?.length || safeStoragePaths.length;
         if (verbose) console.log(`[TEARDOWN] Purged ${purgedStorage} storage objects.`);
       }
     } else {
-      // Attempt removal via student client (may be denied by RLS default deny)
-      const { data, error } = await pool.student.storage
-        .from('report-attachments')
-        .remove(ledger.storagePaths);
-      if (error) {
-        if (verbose) {
-          console.log(
-            '[TEARDOWN INFO] Storage deletion denied by client RLS (expected). Generating targeted SQL.'
-          );
-        }
-      } else {
-        purgedStorage = data?.length || 0;
+      // Authenticated users have NO delete policy on storage.objects (default deny)
+      if (verbose) {
+        console.log(
+          '[TEARDOWN INFO] Client SDK delete denied by storage policy (expected). Targeted SQL required.'
+        );
       }
+      requiresManualSql = true;
     }
   }
 
-  // Step 2: Database Record Cleanup by Exact UUID
-  const reportIds = ledger.reports.map((r) => r.id);
-  if (reportIds.length > 0) {
+  // Step 2: Database Record Cleanup by Exact Validated UUID
+  if (safeReportIds.length > 0) {
     if (pool.adminTeardown) {
       if (verbose) console.log('[TEARDOWN] Purging report fixtures via admin teardown client...');
-      const { error } = await pool.adminTeardown.from('reports').delete().in('id', reportIds);
+      const { error } = await pool.adminTeardown.from('reports').delete().in('id', safeReportIds);
       if (error) {
         console.error('[TEARDOWN WARNING] Report delete returned error:', error.message);
+        requiresManualSql = true;
       } else {
-        purgedReports = reportIds.length;
-        if (verbose) {
-          console.log(`[TEARDOWN] Purged ${purgedReports} reports (cascaded to child tables).`);
+        // Verify deletion against remote catalog
+        const { data: remaining } = await pool.adminTeardown
+          .from('reports')
+          .select('id')
+          .in('id', safeReportIds);
+
+        if (!remaining || remaining.length === 0) {
+          purgedReports = safeReportIds.length;
+          if (verbose) {
+            console.log(`[TEARDOWN] Purged ${purgedReports} reports (cascaded to child tables).`);
+          }
+        } else {
+          console.error(`[TEARDOWN ERROR] ${remaining.length} report fixtures remain undeleted.`);
+          requiresManualSql = true;
         }
       }
     } else {
-      // Generate exact targeted SQL script for operator execution
-      const sqlLines = [
-        `-- CMIRS Gate E.4B Deterministic Cleanup Script for ${ledger.runId}`,
-        `-- Generated at: ${new Date().toISOString()}`,
-        `BEGIN;`,
-        ``,
-        `-- 1. Purge exact storage objects created during run`,
-      ];
-
-      if (ledger.storagePaths.length > 0) {
-        const pathList = ledger.storagePaths.map((p) => `'${p}'`).join(', ');
-        sqlLines.push(
-          `DELETE FROM storage.objects WHERE bucket_id = 'report-attachments' AND name IN (${pathList});`
-        );
-      } else {
-        sqlLines.push(`-- No storage objects were tracked.`);
-      }
-
-      sqlLines.push(``, `-- 2. Purge exact reports (cascades to all 6 child tables)`);
-      const idList = reportIds.map((id) => `'${id}'`).join(', ');
-      sqlLines.push(`DELETE FROM public.reports WHERE id IN (${idList});`);
-      sqlLines.push(``, `COMMIT;`);
-
-      fs.writeFileSync(CLEANUP_SQL_PATH, sqlLines.join('\n'), 'utf-8');
-      if (verbose) {
-        console.log(`[TEARDOWN] Exact targeted SQL cleanup script written to: ${CLEANUP_SQL_PATH}`);
-        console.log(`[TEARDOWN] Run via: npx supabase db query --linked --file ${CLEANUP_SQL_PATH}`);
-      }
+      requiresManualSql = true;
     }
   }
 
-  // Step 3: Mark ledger completed
+  // Step 3: Actionable SQL Generation if Automated Teardown Incomplete
+  if (requiresManualSql && (safeReportIds.length > 0 || safeStoragePaths.length > 0)) {
+    const sqlLines = [
+      `-- =============================================================================`,
+      `-- CMIRS Gate E.4C Deterministic Targeted Cleanup Script for ${ledger.runId}`,
+      `-- Generated at: ${new Date().toISOString()}`,
+      `-- Target Reference: ${EXPECTED_PROJECT_REF}`,
+      `-- Safety: Targets strictly validated UUIDs and canonical paths created by this run`,
+      `-- =============================================================================`,
+      `BEGIN;`,
+      ``,
+    ];
+
+    if (safeStoragePaths.length > 0) {
+      sqlLines.push(
+        `-- 1. Purge exact storage objects created during run`,
+        `DELETE FROM storage.objects`,
+        `WHERE bucket_id = 'report-attachments'`,
+        `  AND name IN (${safeStoragePaths.map((p) => `'${p}'`).join(', ')});`,
+        ``
+      );
+    }
+
+    if (safeReportIds.length > 0) {
+      sqlLines.push(
+        `-- 2. Purge exact reports (PostgreSQL cascades to all 6 child tables)`,
+        `DELETE FROM public.reports`,
+        `WHERE id IN (${safeReportIds.map((id) => `'${id}'`).join(', ')});`,
+        ``
+      );
+    }
+
+    sqlLines.push(`COMMIT;`);
+
+    fs.writeFileSync(CLEANUP_SQL_PATH, sqlLines.join('\n'), 'utf-8');
+
+    if (verbose) {
+      console.log('\n================================================================================');
+      console.log('[ACTION REQUIRED] REMOTE CLEANUP INCOMPLETE — MANUAL SQL PURGE REQUIRED');
+      console.log('================================================================================');
+      console.log('Automatic teardown requires SUPABASE_SERVICE_ROLE_KEY, which is not configured.');
+      console.log('Created fixtures remain active in Supabase Cloud until purged.\n');
+      console.log('Targeted Cleanup Script:');
+      console.log(`  ${CLEANUP_SQL_PATH}\n`);
+      console.log(`To execute the cleanup in project '${EXPECTED_PROJECT_REF}':`);
+      console.log(`  npx supabase db query --linked --file ${CLEANUP_SQL_PATH}\n`);
+      console.log('The on-disk ledger has been RETAINED at:');
+      console.log(`  ${LEDGER_FILE_PATH}`);
+      console.log('================================================================================\n');
+    }
+
+    return {
+      success: false,
+      purgedStorage,
+      purgedReports,
+      requiresManualSql: true,
+      cleanupSqlPath: CLEANUP_SQL_PATH,
+      retainedLedgerPath: LEDGER_FILE_PATH,
+      message: 'Teardown incomplete: manual SQL execution required to purge cloud fixtures.',
+    };
+  }
+
+  // Completed and verified clean
   ledger.completedAt = new Date().toISOString();
   saveLedger(ledger);
 
-  return { success: true, purgedStorage, purgedReports };
+  if (verbose) {
+    console.log('[TEARDOWN] All tracked fixtures purged and verified clean.');
+  }
+
+  return {
+    success: true,
+    purgedStorage,
+    purgedReports,
+    requiresManualSql: false,
+    message: 'Teardown completed and verified successfully.',
+  };
 }
 
 // =============================================================================
-// 10. CLI Entry Point & Guard
+// 10. CLI Entry Point, Signal Handlers & Execution Guard
 // =============================================================================
 
+let isTearingDown = false;
+let globalLedger: FixtureLedger | null = null;
+let globalPool: ClientPool | null = null;
+
+export function setupSignalHandlers(): void {
+  const handleSignal = async (signal: string) => {
+    if (isTearingDown) {
+      console.log(`\n[SIGNAL] Second ${signal} received. Forcing immediate termination.`);
+      process.exit(130);
+    }
+    isTearingDown = true;
+    console.log(`\n[ABORT] ${signal} received. Intercepting for emergency teardown...`);
+
+    if (globalLedger && globalPool) {
+      try {
+        const result = await performTeardown(globalLedger, globalPool, true);
+        if (!result.success) {
+          console.error('[ABORT] Emergency teardown could not fully verify remote deletion.');
+          console.error(`[ABORT] The ledger is retained at '${LEDGER_FILE_PATH}'.`);
+        }
+      } catch (err) {
+        console.error('[ABORT ERROR] Teardown threw exception:', (err as Error).message);
+        console.error(`[ABORT] Recovery ledger retained at '${LEDGER_FILE_PATH}'.`);
+      }
+    } else {
+      console.log('[ABORT] No active session pool or ledger initialized. Exiting safely.');
+    }
+
+    process.exit(signal === 'SIGINT' ? 130 : 143);
+  };
+
+  process.once('SIGINT', () => handleSignal('SIGINT'));
+  process.once('SIGTERM', () => handleSignal('SIGTERM'));
+}
+
 async function main(): Promise<void> {
+  setupSignalHandlers();
+
   const args = process.argv.slice(2);
   const isExecute = args.includes('--execute');
   const isCleanupOnly = args.includes('--cleanup-only');
@@ -1939,11 +2201,11 @@ async function main(): Promise<void> {
 
   console.log(`================================================================================`);
   console.log(`CMIRS Role-Based RLS Integration Test Runner`);
-  console.log(`Target Reference: xyirfifvcntuzceivtho`);
+  console.log(`Designated Project Reference: ${EXPECTED_PROJECT_REF}`);
   console.log(`Mode: ${isExecute ? 'EXECUTE (CLOUD)' : isCleanupOnly ? 'CLEANUP ONLY' : 'SAFE DRY RUN / PREFLIGHT'}`);
   console.log(`================================================================================`);
 
-  // Load environment credentials securely
+  // Load and strictly validate environment credentials
   const env = loadEnvironment();
 
   // Mode A: Cleanup Only
@@ -1952,11 +2214,17 @@ async function main(): Promise<void> {
       console.log('[CLEANUP] No active run ledger found at .rls-run-ledger.json. Nothing to clean.');
       process.exit(0);
     }
-    const raw = fs.readFileSync(LEDGER_FILE_PATH, 'utf-8');
-    const ledger: FixtureLedger = JSON.parse(raw);
+
+    const ledger = loadAndValidateLedger(LEDGER_FILE_PATH);
     const { pool } = await createClientPool(env.supabaseUrl, env.publishableKey, env.testPassword, env.serviceRoleKey);
-    await performTeardown(ledger, pool, true);
-    console.log('[CLEANUP] Teardown complete.');
+    globalLedger = ledger;
+    globalPool = pool;
+
+    const teardown = await performTeardown(ledger, pool, true);
+    if (!teardown.success) {
+      process.exit(2); // Non-zero exit code indicating manual SQL action is required
+    }
+    console.log('[CLEANUP] Teardown completed and verified successfully.');
     process.exit(0);
   }
 
@@ -1965,10 +2233,11 @@ async function main(): Promise<void> {
     console.log('\n[SAFE PREFLIGHT CHECK]');
     console.log('1. Configuration & environment: OK');
     console.log('2. Supabase endpoint:          ', env.supabaseUrl);
-    console.log('3. Publishable key configured:  YES (length: ' + env.publishableKey.length + ')');
-    console.log('4. CMIRS_TEST_PASSWORD present: YES (protected, not printed)');
-    console.log('5. Service-role key optional:  ', env.serviceRoleKey ? 'Configured (teardown only)' : 'Not set (will write SQL)');
-    console.log('6. Total planned specifications: 55 across 7 domains');
+    console.log('3. Validated Project Ref:       ', EXPECTED_PROJECT_REF, '(Hostname verified)');
+    console.log('4. Publishable key configured:  YES (length: ' + env.publishableKey.length + ')');
+    console.log('5. CMIRS_TEST_PASSWORD present: YES (protected, not printed)');
+    console.log('6. Service-role key optional:  ', env.serviceRoleKey ? 'Configured (teardown only)' : 'Not set (will generate SQL)');
+    console.log('7. Total planned specifications: 55 across 7 domains');
     console.log('\n[NOTICE] Remote execution was NOT requested.');
     console.log('To run tests against Supabase Cloud, provide explicit owner authorization and pass:');
     console.log('  npx tsx tests/integration/rls-runner.ts --execute');
@@ -1977,20 +2246,30 @@ async function main(): Promise<void> {
 
   // Mode C: Full Execution (Only when --execute is explicitly supplied)
   const ledger = initializeLedger();
+  globalLedger = ledger;
+
   const { pool, identities } = await createClientPool(
     env.supabaseUrl,
     env.publishableKey,
     env.testPassword,
     env.serviceRoleKey
   );
-  const seed = await fetchSeedReferences(pool.student);
+  globalPool = pool;
 
+  const seed = await fetchSeedReferences(pool.student);
   const suite = new RlsTestSuite(pool, identities, seed, ledger);
 
   try {
     const summary = await suite.runAll();
-    await performTeardown(ledger, pool, true);
-    process.exit(summary.failed > 0 ? 1 : 0);
+    const teardown = await performTeardown(ledger, pool, true);
+
+    if (summary.failed > 0) {
+      process.exit(1);
+    }
+    if (!teardown.success) {
+      process.exit(2); // Tests passed, but manual cleanup SQL required
+    }
+    process.exit(0);
   } catch (err) {
     console.error('\n[FATAL RUNNER EXCEPTION]:', (err as Error).message);
     console.log('[RECOVERY] Executing emergency teardown of tracked fixtures...');
@@ -2000,7 +2279,12 @@ async function main(): Promise<void> {
 }
 
 // Only invoke main when run directly as CLI
-if (require.main === module || process.argv[1]?.includes('rls-runner')) {
+const isDirectEntry =
+  typeof process !== 'undefined' &&
+  process.argv[1] !== undefined &&
+  (process.argv[1].endsWith('rls-runner.ts') || process.argv[1].endsWith('rls-runner.js'));
+
+if (require.main === module || isDirectEntry) {
   main().catch((err) => {
     console.error('[UNHANDLED FATAL ERROR]:', err);
     process.exit(1);
