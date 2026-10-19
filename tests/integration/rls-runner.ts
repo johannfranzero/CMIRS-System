@@ -2207,12 +2207,12 @@ async function main(): Promise<void> {
 
   // Mode A: Cleanup Only
   if (isCleanupOnly) {
-    const env = loadEnvironment(true);
     if (!fs.existsSync(LEDGER_FILE_PATH)) {
       console.log('[CLEANUP] No active run ledger found at .rls-run-ledger.json. Nothing to clean.');
       process.exit(0);
     }
 
+    const env = loadEnvironment(true);
     const ledger = loadAndValidateLedger(LEDGER_FILE_PATH);
     const { pool } = await createClientPool(env.supabaseUrl, env.publishableKey, env.testPassword!, env.serviceRoleKey);
     globalLedger = ledger;

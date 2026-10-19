@@ -8,6 +8,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { SupabaseClient } from '@supabase/supabase-js';
 import {
   EXPECTED_PROJECT_REF,
   EXPECTED_HOSTNAME,
@@ -222,18 +223,18 @@ async function runLocalSafetyTests() {
 
   // Mock a ClientPool without adminTeardown
   const mockPool: ClientPool = {
-    anon: {} as any,
+    anon: {} as unknown as SupabaseClient,
     student: {
       storage: {
         from: () => ({
           remove: async () => ({ data: null, error: { message: 'AccessDenied' } }),
         }),
       },
-    } as any,
-    coord: {} as any,
-    tech: {} as any,
-    admin: {} as any,
-    mgmt: {} as any,
+    } as unknown as SupabaseClient,
+    coord: {} as unknown as SupabaseClient,
+    tech: {} as unknown as SupabaseClient,
+    admin: {} as unknown as SupabaseClient,
+    mgmt: {} as unknown as SupabaseClient,
     adminTeardown: undefined, // Simulates standard environment without service-role key
   };
 
