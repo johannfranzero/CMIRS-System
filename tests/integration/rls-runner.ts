@@ -1035,7 +1035,7 @@ export class RlsTestSuite {
       .select('id')
       .single();
 
-    if (d09) {
+    if (d09 && this.fixtureAsgWorkId) {
       this.ledger.workLogs.push({ id: d09.id, assignmentId: this.fixtureAsgWorkId });
       saveLedger(this.ledger);
     }
