@@ -1,10 +1,13 @@
 import Link from 'next/link';
+import { requireAuth } from '@/utils/auth/server';
 import { AppShell } from '@/components/layout/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PlusCircleIcon } from '@/components/ui/icons';
 
-export default function NewReportPage() {
+export default async function NewReportPage() {
+  await requireAuth('/reports/new');
+
   return (
     <AppShell pageTitle="Submit Maintenance Report">
       <div className="max-w-3xl mx-auto py-8">

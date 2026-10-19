@@ -1,16 +1,18 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { sanitizeRedirectUrl } from "@/utils/auth/validation";
 
 /**
- * Next.js Proxy — Supabase session refresh.
+ * Next.js Proxy — Supabase session refresh and route perimeter guard.
  *
- * This proxy runs on every matched request and refreshes the Supabase
- * auth token if it has expired, keeping the user's session alive across
- * Server Components. Without this, users would be silently logged out when
- * their JWT expires.
- *
- * No route protection or redirects are implemented here — that will be
- * added in a later authentication phase.
+ * This proxy runs on every matched request and:
+ * 1. Refreshes the Supabase auth token if it has expired, keeping the user's
+ *    session alive across Server Components.
+ * 2. Enforces route-level perimeter authentication:
+ *    - Unauthenticated requests to protected routes redirect to /login?next=...
+ *    - Authenticated requests to /login redirect to the dashboard or safe return URL.
+ * 3. Never redirects to arbitrary external destinations (uses sanitizeRedirectUrl).
+ * 4. Propagates refreshed session cookies to redirect responses.
  *
  * Note: Next.js 16 renamed the `middleware` file convention to `proxy`.
  * The exported function must be named `proxy` (not `middleware`).
@@ -51,10 +53,48 @@ export async function proxy(request: NextRequest) {
   // IMPORTANT: Do not add logic between createServerClient and
   // supabase.auth.getUser(). A simple mistake could make it very hard to
   // debug issues with users being randomly logged out.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Refreshes the auth token if expired. The result is intentionally unused
-  // in this foundation phase — route protection will be added later.
-  await supabase.auth.getUser();
+  const pathname = request.nextUrl.pathname;
+  const isPublicRoute =
+    pathname === '/login' ||
+    pathname.startsWith('/login/') ||
+    pathname === '/auth' ||
+    pathname.startsWith('/auth/');
+
+  // 1. Unauthenticated user trying to access a protected route
+  if (!user && !isPublicRoute) {
+    const rawTarget = pathname + request.nextUrl.search;
+    const safeTarget = sanitizeRedirectUrl(rawTarget, '/');
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = '/login';
+    redirectUrl.search = '';
+    redirectUrl.searchParams.set('next', safeTarget);
+
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    // Copy any refreshed cookies to the redirect response
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
+    });
+    return redirectResponse;
+  }
+
+  // 2. Authenticated user trying to access the login page
+  if (user && isPublicRoute && pathname === '/login') {
+    const nextParam = request.nextUrl.searchParams.get('next');
+    const safeDestination = sanitizeRedirectUrl(nextParam, '/');
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = safeDestination;
+    redirectUrl.search = '';
+
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
+    });
+    return redirectResponse;
+  }
 
   return supabaseResponse;
 }
@@ -62,14 +102,11 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
+     * Match all request paths except for:
      * - /_next/static  (static files)
      * - /_next/image   (image optimization files)
      * - /favicon.ico   (favicon)
      * - paths ending in static asset extensions (svg, png, jpg, jpeg, gif, webp)
-     *
-     * Note: leading / is required in the lookahead so that /_next/static/…
-     * and /favicon.ico are correctly excluded (paths always start with /).
      */
     "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],

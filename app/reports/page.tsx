@@ -1,10 +1,13 @@
 import Link from 'next/link';
+import { requireAuth } from '@/utils/auth/server';
 import { AppShell } from '@/components/layout/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ReportsIcon, ChevronRightIcon } from '@/components/ui/icons';
 
-export default function ReportsPage() {
+export default async function ReportsPage() {
+  await requireAuth('/reports');
+
   return (
     <AppShell pageTitle="Maintenance Reports Queue">
       <div className="max-w-3xl mx-auto py-8">

@@ -1,10 +1,13 @@
 import Link from 'next/link';
+import { requireAuth } from '@/utils/auth/server';
 import { AppShell } from '@/components/layout/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LocationsIcon } from '@/components/ui/icons';
 
-export default function LocationsPage() {
+export default async function LocationsPage() {
+  await requireAuth('/locations');
+
   return (
     <AppShell pageTitle="Campus Locations & Facilities">
       <div className="max-w-3xl mx-auto py-8">

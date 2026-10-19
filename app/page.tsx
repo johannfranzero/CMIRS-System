@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { requireAuth } from '@/utils/auth/server';
 import { AppShell } from '@/components/layout/app-shell';
 import { StatCard } from '@/components/ui/stat-card';
 import { ReportList } from '@/components/dashboard/report-list';
@@ -17,7 +18,9 @@ import {
 } from '@/components/ui/icons';
 import { MOCK_REPORTS, MOCK_STATS } from '@/data/mock-reports';
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  await requireAuth('/');
+
   return (
     <AppShell pageTitle="Operations Dashboard">
       <div className="flex flex-col gap-6">
