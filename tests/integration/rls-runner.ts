@@ -2205,18 +2205,16 @@ async function main(): Promise<void> {
   console.log(`Mode: ${isExecute ? 'EXECUTE (CLOUD)' : isCleanupOnly ? 'CLEANUP ONLY' : 'SAFE DRY RUN / PREFLIGHT'}`);
   console.log(`================================================================================`);
 
-  // Load and strictly validate environment credentials
-  const env = loadEnvironment();
-
   // Mode A: Cleanup Only
   if (isCleanupOnly) {
+    const env = loadEnvironment(true);
     if (!fs.existsSync(LEDGER_FILE_PATH)) {
       console.log('[CLEANUP] No active run ledger found at .rls-run-ledger.json. Nothing to clean.');
       process.exit(0);
     }
 
     const ledger = loadAndValidateLedger(LEDGER_FILE_PATH);
-    const { pool } = await createClientPool(env.supabaseUrl, env.publishableKey, env.testPassword, env.serviceRoleKey);
+    const { pool } = await createClientPool(env.supabaseUrl, env.publishableKey, env.testPassword!, env.serviceRoleKey);
     globalLedger = ledger;
     globalPool = pool;
 
@@ -2230,12 +2228,16 @@ async function main(): Promise<void> {
 
   // Mode B: Safe Dry Run / Verification (Default without --execute)
   if (isDryRun) {
+    const env = loadEnvironment(false);
     console.log('\n[SAFE PREFLIGHT CHECK]');
     console.log('1. Configuration & environment: OK');
     console.log('2. Supabase endpoint:          ', env.supabaseUrl);
     console.log('3. Validated Project Ref:       ', EXPECTED_PROJECT_REF, '(Hostname verified)');
     console.log('4. Publishable key configured:  YES (length: ' + env.publishableKey.length + ')');
-    console.log('5. CMIRS_TEST_PASSWORD present: YES (protected, not printed)');
+    console.log(
+      '5. CMIRS_TEST_PASSWORD present: ',
+      env.testPassword ? 'YES (protected, not printed)' : 'NOT SET (Required before running with --execute)'
+    );
     console.log('6. Service-role key optional:  ', env.serviceRoleKey ? 'Configured (teardown only)' : 'Not set (will generate SQL)');
     console.log('7. Total planned specifications: 55 across 7 domains');
     console.log('\n[NOTICE] Remote execution was NOT requested.');
@@ -2245,13 +2247,14 @@ async function main(): Promise<void> {
   }
 
   // Mode C: Full Execution (Only when --execute is explicitly supplied)
+  const env = loadEnvironment(true);
   const ledger = initializeLedger();
   globalLedger = ledger;
 
   const { pool, identities } = await createClientPool(
     env.supabaseUrl,
     env.publishableKey,
-    env.testPassword,
+    env.testPassword!,
     env.serviceRoleKey
   );
   globalPool = pool;
