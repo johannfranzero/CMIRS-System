@@ -84,7 +84,7 @@ export async function getOperationalAnalyticsFromClient(
     return {
       analytics: calculateOperationalAnalytics(reports),
       state: 'ready',
-      totalCount: count,
+      totalCount: count ?? null,
       fetchedCount: reports.length,
     };
   } catch {

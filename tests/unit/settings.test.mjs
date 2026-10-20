@@ -15,6 +15,8 @@ import {
   SETTINGS_USER_DIRECTORY_INCOMPLETE_MESSAGE,
 } from '../../utils/settings/transform.ts';
 import { formatRoleLabel } from '../../types/auth.ts';
+import { getAdministratorSettingsDataFromClient } from '../../utils/settings/runtime.ts';
+import { createMockReadSupabase } from './helpers/mock-read-supabase.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -118,6 +120,94 @@ test('Settings user directory: over-limit and query-error results hide all parti
   });
 });
 
+test('Settings DAL runtime: returns complete directory and audit data from bounded exact-count queries', async () => {
+  const supabase = createMockReadSupabase({
+    profiles: {
+      data: [
+        {
+          id: 'user-1',
+          full_name: 'Alex Morgan',
+          email: 'alex@example.edu',
+          role: 'administrator',
+          is_active: true,
+        },
+      ],
+      count: 1,
+      error: null,
+    },
+    role_change_audit: {
+      data: [
+        {
+          id: 'audit-1',
+          old_role: 'student_personnel',
+          new_role: 'technician',
+          created_at: '2026-10-20T04:00:00.000Z',
+          affected_user: { full_name: 'Taylor Chen' },
+          changed_by_user: { full_name: 'Alex Morgan' },
+        },
+      ],
+      count: null,
+      error: null,
+    },
+  });
+
+  const result = await getAdministratorSettingsDataFromClient(supabase);
+
+  assert.equal(result.userDirectory.state, 'ready');
+  assert.equal(result.userDirectory.totalCount, 1);
+  assert.deepEqual(result.userDirectory.users.map((user) => user.id), ['user-1']);
+  assert.equal(result.roleChangeHistory.length, 1);
+  assert.equal(result.roleChangeHistoryError, null);
+
+  const profilesOperation = supabase.operations.find((operation) => operation.table === 'profiles');
+  assert.deepEqual(profilesOperation.select.options, { count: 'exact' });
+  assert.deepEqual(profilesOperation.orders, [{ column: 'full_name', options: undefined }]);
+  assert.deepEqual(profilesOperation.range, { from: 0, to: 999 });
+
+  const auditOperation = supabase.operations.find((operation) => operation.table === 'role_change_audit');
+  assert.deepEqual(auditOperation.orders, [{ column: 'created_at', options: { ascending: false } }]);
+  assert.equal(auditOperation.limit, 100);
+});
+
+test('Settings DAL runtime: accepts empty results but withholds partial directories', async () => {
+  const emptySupabase = createMockReadSupabase({
+    profiles: { data: [], count: 0, error: null },
+    role_change_audit: { data: [], count: null, error: null },
+  });
+  const emptyResult = await getAdministratorSettingsDataFromClient(emptySupabase);
+  assert.deepEqual(emptyResult.userDirectory, {
+    users: [],
+    state: 'ready',
+    totalCount: 0,
+    fetchedCount: 0,
+    error: null,
+  });
+
+  const incompleteSupabase = createMockReadSupabase({
+    profiles: { data: [users[0]], count: 2, error: null },
+    role_change_audit: { data: [], count: null, error: null },
+  });
+  const incompleteResult = await getAdministratorSettingsDataFromClient(incompleteSupabase);
+  assert.equal(incompleteResult.userDirectory.state, 'incomplete');
+  assert.equal(incompleteResult.userDirectory.fetchedCount, 1);
+  assert.deepEqual(incompleteResult.userDirectory.users, []);
+});
+
+test('Settings DAL runtime: sanitizes independent profiles and audit query errors', async () => {
+  const supabase = createMockReadSupabase({
+    profiles: { data: null, count: null, error: { message: 'permission denied' } },
+    role_change_audit: { data: null, count: null, error: { message: 'timeout' } },
+  });
+
+  const result = await getAdministratorSettingsDataFromClient(supabase);
+
+  assert.equal(result.userDirectory.state, 'error');
+  assert.deepEqual(result.userDirectory.users, []);
+  assert.equal(result.userDirectory.error, SETTINGS_USER_DIRECTORY_ERROR_MESSAGE);
+  assert.deepEqual(result.roleChangeHistory, []);
+  assert.match(result.roleChangeHistoryError, /temporarily unavailable/);
+});
+
 test('Settings transforms: role-change audit maps actual related names and safe timestamps', () => {
   const entry = mapRoleChangeAudit({
     id: 'audit-1',
@@ -142,22 +232,22 @@ test('Settings transforms: role-change audit maps actual related names and safe 
 
 test('Settings DAL: administrator-only exact-count query bounds the directory and refuses fallback data', () => {
   const dal = fs.readFileSync(path.join(myAppRoot, 'utils/settings/dal.ts'), 'utf8');
+  const runtime = fs.readFileSync(path.join(myAppRoot, 'utils/settings/runtime.ts'), 'utf8');
 
   assert.ok(dal.includes("user.profile.role !== 'administrator'"));
-  assert.ok(dal.includes(".from('profiles')"));
-  assert.ok(dal.includes(".select('id, full_name, email, role, is_active', { count: 'exact' })"));
-  assert.ok(dal.includes('.range(0, SETTINGS_USER_DIRECTORY_MAX_ROWS - 1)'));
-  assert.ok(dal.includes('createSettingsUserDirectoryResult('));
-  assert.ok(dal.includes('SETTINGS_USER_DIRECTORY_MAX_ROWS = 1000'));
-  assert.ok(dal.includes(".from('role_change_audit')"));
-  assert.ok(dal.includes('affected_user:profiles!user_id'));
-  assert.ok(dal.includes('changed_by_user:profiles!changed_by'));
-  assert.ok(dal.includes('.limit(ROLE_CHANGE_HISTORY_LIMIT)'));
-  assert.equal(dal.includes('phone'), false);
-  assert.equal(dal.includes('.insert('), false);
-  assert.equal(dal.includes('.update('), false);
-  assert.equal(dal.includes('.delete('), false);
-  assert.equal(dal.includes('FALLBACK_'), false);
+  assert.ok(dal.includes('getAdministratorSettingsDataFromClient(supabase)'));
+  assert.ok(runtime.includes(".select('id, full_name, email, role, is_active', { count: 'exact' })"));
+  assert.ok(runtime.includes('.range(0, SETTINGS_USER_DIRECTORY_MAX_ROWS - 1)'));
+  assert.ok(runtime.includes('SETTINGS_USER_DIRECTORY_MAX_ROWS = 1000'));
+  assert.ok(runtime.includes(".from('role_change_audit')"));
+  assert.ok(runtime.includes('affected_user:profiles!user_id'));
+  assert.ok(runtime.includes('changed_by_user:profiles!changed_by'));
+  assert.ok(runtime.includes('.limit(ROLE_CHANGE_HISTORY_LIMIT)'));
+  assert.equal(runtime.includes('phone'), false);
+  assert.equal(runtime.includes('.insert('), false);
+  assert.equal(runtime.includes('.update('), false);
+  assert.equal(runtime.includes('.delete('), false);
+  assert.equal(runtime.includes('FALLBACK_'), false);
 });
 
 test('Settings page: retains administrator-only server guard and renders safe incomplete-directory state', () => {

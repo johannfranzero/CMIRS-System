@@ -1,5 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const myAppRoot = path.resolve(__dirname, '../..');
 
 /**
  * Stage 2.3 Unit Test Suite:
@@ -135,6 +142,32 @@ test('Navigation: Unauthenticated fallback excludes privileged routes', () => {
 
   assert.equal(hrefs.includes('/settings'), false);
   assert.equal(hrefs.includes('/analytics'), false);
+});
+
+test('Navigation: implemented report routes render without Preview badges', () => {
+  const navigation = fs.readFileSync(path.join(myAppRoot, 'config/navigation.ts'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(myAppRoot, 'components/layout/sidebar.tsx'), 'utf8');
+  const mobileNavigation = fs.readFileSync(
+    path.join(myAppRoot, 'components/layout/mobile-nav.tsx'),
+    'utf8'
+  );
+  const reportsNavigation = navigation.slice(
+    navigation.indexOf("name: 'All Reports'"),
+    navigation.indexOf("name: 'Submit Report'")
+  );
+  const submitNavigation = navigation.slice(
+    navigation.indexOf("name: 'Submit Report'"),
+    navigation.indexOf("name: 'Campus Locations'")
+  );
+
+  for (const item of [reportsNavigation, submitNavigation]) {
+    assert.ok(item.includes('allowedRoles: USER_ROLES'));
+    assert.ok(item.includes("badge: 'Active'"));
+    assert.ok(item.includes('isPlaceholder: false'));
+  }
+
+  assert.ok(sidebar.includes('{item.isPlaceholder ?'));
+  assert.ok(mobileNavigation.includes('{link.isPlaceholder &&'));
 });
 
 test('Identity Resolution: Extracts clean initials from various formats', () => {

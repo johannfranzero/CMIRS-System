@@ -9,6 +9,8 @@ import {
   calculateOperationalAnalytics,
   isAnalyticsDatasetComplete,
 } from '../../utils/reports/transform.ts';
+import { getOperationalAnalyticsFromClient } from '../../utils/reports/analytics-runtime.ts';
+import { createMockReadSupabase } from './helpers/mock-read-supabase.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -124,20 +126,77 @@ test('Analytics completeness: exact count is required and truncated data is refu
   assert.equal(isAnalyticsDatasetComplete(5, 4), false);
 });
 
+test('Analytics DAL runtime: calculates results only from a complete exact-count response', async () => {
+  const supabase = createMockReadSupabase({
+    reports: { data: reports, count: reports.length, error: null },
+  });
+
+  const result = await getOperationalAnalyticsFromClient(supabase);
+
+  assert.equal(result.state, 'ready');
+  assert.equal(result.totalCount, reports.length);
+  assert.equal(result.fetchedCount, reports.length);
+  assert.equal(result.analytics.totalReports, reports.length);
+  assert.equal(result.analytics.urgentHazardReports, 1);
+
+  const operation = supabase.operations[0];
+  assert.equal(operation.table, 'reports');
+  assert.deepEqual(operation.select.options, { count: 'exact' });
+  assert.deepEqual(operation.orders, [{ column: 'id', options: undefined }]);
+  assert.deepEqual(operation.range, { from: 0, to: 999 });
+});
+
+test('Analytics DAL runtime: represents a complete empty result without fallback totals', async () => {
+  const supabase = createMockReadSupabase({
+    reports: { data: [], count: 0, error: null },
+  });
+
+  const result = await getOperationalAnalyticsFromClient(supabase);
+
+  assert.equal(result.state, 'ready');
+  assert.equal(result.analytics.totalReports, 0);
+  assert.equal(result.totalCount, 0);
+  assert.equal(result.fetchedCount, 0);
+});
+
+test('Analytics DAL runtime: rejects query errors and incomplete datasets without partial totals', async () => {
+  const errorSupabase = createMockReadSupabase({
+    reports: { data: null, count: null, error: { message: 'query timeout' } },
+  });
+  const errorResult = await getOperationalAnalyticsFromClient(errorSupabase);
+  assert.equal(errorResult.state, 'error');
+  assert.equal(errorResult.analytics, null);
+
+  const truncatedSupabase = createMockReadSupabase({
+    reports: { data: reports.slice(0, 2), count: 3, error: null },
+  });
+  const truncatedResult = await getOperationalAnalyticsFromClient(truncatedSupabase);
+  assert.equal(truncatedResult.state, 'incomplete');
+  assert.equal(truncatedResult.analytics, null);
+  assert.equal(truncatedResult.totalCount, 3);
+  assert.equal(truncatedResult.fetchedCount, 2);
+
+  const missingCountSupabase = createMockReadSupabase({
+    reports: { data: reports.slice(0, 2), count: null, error: null },
+  });
+  const missingCountResult = await getOperationalAnalyticsFromClient(missingCountSupabase);
+  assert.equal(missingCountResult.state, 'incomplete');
+  assert.equal(missingCountResult.analytics, null);
+});
+
 test('Analytics DAL: exact-count bounded RLS query returns no partial analytics on errors or truncation', () => {
   const dal = fs.readFileSync(path.join(myAppRoot, 'utils/reports/dal.ts'), 'utf8');
-  const functionStart = dal.indexOf('export async function getOperationalAnalytics');
-  const functionEnd = dal.indexOf('\n// =============================================================================', functionStart);
-  const functionBody = dal.slice(functionStart, functionEnd);
+  const runtime = fs.readFileSync(path.join(myAppRoot, 'utils/reports/analytics-runtime.ts'), 'utf8');
 
-  assert.ok(functionBody.includes(".from('reports')"));
-  assert.ok(functionBody.includes(".select(SELECT_ANALYTICS_REPORTS_FIELDS, { count: 'exact' })"));
-  assert.ok(functionBody.includes('.range(0, ANALYTICS_MAX_REPORT_ROWS - 1)'));
-  assert.ok(functionBody.includes('isAnalyticsDatasetComplete(count, reports.length)'));
-  assert.ok(functionBody.includes("state: 'incomplete'"));
-  assert.ok(functionBody.includes('analytics: null'));
-  assert.equal(functionBody.includes('getReportsQueue'), false);
-  assert.equal(functionBody.includes('FALLBACK_'), false);
+  assert.ok(dal.includes('getOperationalAnalyticsFromClient(supabase)'));
+  assert.ok(runtime.includes(".from('reports')"));
+  assert.ok(runtime.includes(".select(SELECT_ANALYTICS_REPORTS_FIELDS, { count: 'exact' })"));
+  assert.ok(runtime.includes('.range(0, ANALYTICS_MAX_REPORT_ROWS - 1)'));
+  assert.ok(runtime.includes('isAnalyticsDatasetComplete(count, reports.length)'));
+  assert.ok(runtime.includes("state: 'incomplete'"));
+  assert.ok(runtime.includes('analytics: null'));
+  assert.equal(runtime.includes('getReportsQueue'), false);
+  assert.equal(runtime.includes('FALLBACK_'), false);
 });
 
 test('Analytics page: retains server guard, scope disclosure, error state, and loading UI', () => {

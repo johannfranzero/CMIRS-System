@@ -40,16 +40,16 @@ export const MAIN_NAVIGATION: readonly NavigationItem[] = [
     href: '/reports',
     icon: ReportsIcon,
     allowedRoles: USER_ROLES,
-    badge: 'Phase 2',
-    isPlaceholder: true,
+    badge: 'Active',
+    isPlaceholder: false,
   },
   {
     name: 'Submit Report',
     href: '/reports/new',
     icon: PlusCircleIcon,
     allowedRoles: USER_ROLES, // Approved PD-R6: All 5 roles permitted to submit
-    badge: 'Phase 2',
-    isPlaceholder: true,
+    badge: 'Active',
+    isPlaceholder: false,
   },
   {
     name: 'Campus Locations',
