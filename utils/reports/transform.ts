@@ -132,7 +132,6 @@ export interface RawDbReportDetailRow extends RawDbReportRow {
   }> | null;
   report_attachments?: Array<{
     id: string;
-    file_path: string;
     file_name: string;
     file_size: number;
     mime_type: string;
@@ -341,7 +340,6 @@ export function transformDbReportToDetailedReport(row: RawDbReportDetailRow): De
     .filter((att): att is NonNullable<typeof att> => att != null && typeof att.id === 'string' && att.deleted_at == null)
     .map((att) => ({
       id: att.id || '',
-      filePath: att.file_path || '',
       fileName: att.file_name || 'attachment',
       fileSize: att.file_size || 0,
       mimeType: att.mime_type || 'image/jpeg',

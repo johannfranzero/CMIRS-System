@@ -24,8 +24,15 @@ import type {
 import type { ReportStatus, PriorityLevel, AssignmentStatus } from '../../types/reports';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'] as const;
+export const ALLOWED_ATTACHMENT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_ATTACHMENTS_PER_REPORT = 5;
+
+const ATTACHMENT_EXTENSION_BY_MIME = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+} as const;
 
 export const VALID_REPORT_STATUSES: readonly ReportStatus[] = [
   'submitted',
@@ -83,6 +90,39 @@ export function isPriorityLevel(value: unknown): value is PriorityLevel {
  */
 export function isAssignmentStatus(value: unknown): value is AssignmentStatus {
   return typeof value === 'string' && (VALID_ASSIGNMENT_STATUSES as readonly string[]).includes(value);
+}
+
+export function isAllowedAttachmentMimeType(
+  value: unknown
+): value is (typeof ALLOWED_ATTACHMENT_MIME_TYPES)[number] {
+  return (
+    typeof value === 'string' &&
+    (ALLOWED_ATTACHMENT_MIME_TYPES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Returns a storage extension from the trusted MIME allowlist, never from a filename.
+ */
+export function getAttachmentExtensionForMime(
+  mimeType: (typeof ALLOWED_ATTACHMENT_MIME_TYPES)[number]
+): 'jpg' | 'png' | 'webp' {
+  return ATTACHMENT_EXTENSION_BY_MIME[mimeType];
+}
+
+/**
+ * Preserves a readable name for the immutable metadata record without accepting path segments.
+ */
+export function sanitizeAttachmentFileName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+
+  const basename = value.replace(/\\\\/g, '/').split('/').pop()?.trim() ?? '';
+  const sanitized = basename
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .replace(/[^a-zA-Z0-9._() -]/g, '_')
+    .slice(0, 255);
+
+  return sanitized || null;
 }
 
 /**
@@ -461,28 +501,19 @@ export function validateAttachmentMetaInput(input: unknown): ValidationResult<At
     errors.reportId = 'A valid report identifier is required.';
   }
 
-  if (typeof raw.fileName !== 'string' || raw.fileName.trim().length === 0) {
+  const fileName = sanitizeAttachmentFileName(raw.fileName);
+  if (!fileName) {
     errors.fileName = 'File name is required.';
-  } else {
-    const trimmedName = raw.fileName.trim();
-    if (trimmedName.length > 255) {
-      errors.fileName = 'File name must not exceed 255 characters.';
-    }
-    const lower = trimmedName.toLowerCase();
-    const hasValidExt = ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext));
-    if (!hasValidExt) {
-      errors.fileName = 'Only JPG, JPEG, PNG, and WebP image extensions are supported.';
-    }
   }
 
   const size = Number(raw.fileSize);
   if (Number.isNaN(size) || !Number.isInteger(size) || size <= 0) {
     errors.fileSize = 'File size must be a positive integer.';
-  } else if (size > 10485760) {
+  } else if (size > MAX_ATTACHMENT_BYTES) {
     errors.fileSize = 'File size exceeds maximum limit of 10 MB (10,485,760 bytes).';
   }
 
-  if (typeof raw.mimeType !== 'string' || !(ALLOWED_MIME_TYPES as readonly string[]).includes(raw.mimeType)) {
+  if (!isAllowedAttachmentMimeType(raw.mimeType)) {
     errors.mimeType = 'MIME type must be image/jpeg, image/png, or image/webp.';
   }
 
@@ -494,7 +525,7 @@ export function validateAttachmentMetaInput(input: unknown): ValidationResult<At
     success: true,
     data: {
       reportId: (raw.reportId as string).trim(),
-      fileName: (raw.fileName as string).trim(),
+      fileName: fileName as string,
       fileSize: size,
       mimeType: raw.mimeType as 'image/jpeg' | 'image/png' | 'image/webp',
     },

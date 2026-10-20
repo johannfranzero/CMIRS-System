@@ -500,7 +500,6 @@ export const SELECT_REPORT_DETAIL_FIELDS = `
   ),
   report_attachments (
     id,
-    file_path,
     file_name,
     file_size,
     mime_type,
@@ -605,4 +604,3 @@ export async function getReportDetails(id: string): Promise<ReportDetailResult> 
     };
   }
 }
-

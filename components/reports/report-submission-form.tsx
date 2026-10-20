@@ -1,8 +1,12 @@
 'use client';
 
-import React, { useActionState, useState } from 'react';
+import React, { useActionState, useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { submitReportAction, INITIAL_ACTION_STATE } from '@/actions/reports';
+import {
+  INITIAL_ACTION_STATE,
+  submitReportAction,
+  uploadReportAttachmentAction,
+} from '@/actions/reports';
 import type { CategoryOption, LocationOption } from '@/types/reports';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -19,6 +23,17 @@ interface ReportSubmissionFormProps {
   categories: CategoryOption[];
   locations: LocationOption[];
   userRole?: string;
+}
+
+interface SelectedAttachment {
+  localId: string;
+  file: File;
+}
+
+interface AttachmentUploadOutcome {
+  localId: string;
+  status: 'success' | 'error';
+  message: string;
 }
 
 export function ReportSubmissionForm({
@@ -38,9 +53,11 @@ export function ReportSubmissionForm({
   const [isUrgentHazard, setIsUrgentHazard] = useState(false);
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
 
-  // Attachment groundwork state
-  const [selectedFiles, setSelectedFiles] = useState<Array<{ name: string; size: number; type: string }>>([]);
+  const [selectedFiles, setSelectedFiles] = useState<SelectedAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [attachmentOutcomes, setAttachmentOutcomes] = useState<AttachmentUploadOutcome[]>([]);
+  const [isUploadingAttachments, startAttachmentUpload] = useTransition();
+  const uploadedForReportRef = useRef<string | null>(null);
 
   // Merge client usability errors with server-returned field errors
   const activeErrors: Record<string, string> = {
@@ -61,7 +78,7 @@ export function ReportSubmissionForm({
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
     const maxSizeBytes = 10 * 1024 * 1024; // 10 MB per Storage setup policy
 
-    const newFiles: Array<{ name: string; size: number; type: string }> = [];
+    const newFiles: SelectedAttachment[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!allowedMimeTypes.includes(file.type)) {
@@ -72,14 +89,81 @@ export function ReportSubmissionForm({
         setAttachmentError(`"${file.name}" exceeds the 10 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
         return;
       }
-      newFiles.push({ name: file.name, size: file.size, type: file.type });
+      newFiles.push({
+        localId: globalThis.crypto?.randomUUID?.() ?? `${file.name}-${file.size}-${file.lastModified}-${Date.now()}`,
+        file,
+      });
     }
 
     setSelectedFiles((prev) => [...prev, ...newFiles]);
   };
 
-  const removeFile = (index: number) => {
-    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  const removeFile = (localId: string) => {
+    setSelectedFiles((prev) => prev.filter((file) => file.localId !== localId));
+    setAttachmentOutcomes((prev) => prev.filter((outcome) => outcome.localId !== localId));
+  };
+
+  const uploadAttachments = useCallback(
+    (reportId: string, attachments: SelectedAttachment[]) => {
+      if (attachments.length === 0) return;
+
+      startAttachmentUpload(async () => {
+        const outcomes: AttachmentUploadOutcome[] = [];
+
+        for (const attachment of attachments) {
+          const formData = new FormData();
+          formData.set('reportId', reportId);
+          formData.set('attachment', attachment.file);
+
+          const result = await uploadReportAttachmentAction(formData);
+          outcomes.push({
+            localId: attachment.localId,
+            status: result.status === 'success' ? 'success' : 'error',
+            message:
+              result.message ??
+              (result.status === 'success'
+                ? `${attachment.file.name} saved.`
+                : `${attachment.file.name} could not be saved.`),
+          });
+        }
+
+        setAttachmentOutcomes((previous) => {
+          const next = previous.filter(
+            (outcome) => !outcomes.some((replacement) => replacement.localId === outcome.localId)
+          );
+          return [...next, ...outcomes];
+        });
+      });
+    },
+    [startAttachmentUpload]
+  );
+
+  useEffect(() => {
+    if (
+      state.status !== 'success' ||
+      !state.data ||
+      selectedFiles.length === 0 ||
+      uploadedForReportRef.current === state.data.id
+    ) {
+      return;
+    }
+
+    uploadedForReportRef.current = state.data.id;
+    uploadAttachments(state.data.id, selectedFiles);
+  }, [state, selectedFiles, uploadAttachments]);
+
+  const retryFailedAttachments = () => {
+    if (!state.data) return;
+
+    const failedIds = new Set(
+      attachmentOutcomes
+        .filter((outcome) => outcome.status === 'error')
+        .map((outcome) => outcome.localId)
+    );
+    uploadAttachments(
+      state.data.id,
+      selectedFiles.filter((attachment) => failedIds.has(attachment.localId))
+    );
   };
 
   const handleClientValidation = (e: React.FormEvent<HTMLFormElement>) => {
@@ -126,6 +210,8 @@ export function ReportSubmissionForm({
     setIsUrgentHazard(false);
     setSelectedFiles([]);
     setAttachmentError(null);
+    setAttachmentOutcomes([]);
+    uploadedForReportRef.current = null;
     setClientErrors({});
   };
 
@@ -150,6 +236,35 @@ export function ReportSubmissionForm({
           <p className="mt-2 text-sm text-slate-600 max-w-md leading-relaxed">
             Your incident report has been securely registered in the system. Campus Maintenance Coordinators will triage and dispatch technician assistance.
           </p>
+
+          {selectedFiles.length > 0 && (
+            <div className="mt-5 w-full max-w-xl rounded-xl border border-slate-200 bg-slate-50 p-4 text-left">
+              <p className="text-sm font-semibold text-slate-900">Photo attachment status</p>
+              {isUploadingAttachments && (
+                <p className="mt-1 text-xs text-slate-600">Saving your selected photos. Your report has already been created.</p>
+              )}
+              {!isUploadingAttachments && attachmentOutcomes.length === 0 && (
+                <p className="mt-1 text-xs text-slate-600">Preparing your selected photos for secure upload.</p>
+              )}
+              {attachmentOutcomes.length > 0 && (
+                <ul className="mt-2 space-y-1.5 text-xs">
+                  {attachmentOutcomes.map((outcome) => (
+                    <li
+                      key={outcome.localId}
+                      className={outcome.status === 'success' ? 'text-emerald-700' : 'text-rose-700'}
+                    >
+                      {outcome.message}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!isUploadingAttachments && attachmentOutcomes.some((outcome) => outcome.status === 'error') && (
+                <Button type="button" variant="outline" size="sm" className="mt-3" onClick={retryFailedAttachments}>
+                  Retry Failed Photos
+                </Button>
+              )}
+            </div>
+          )}
 
           <div className="mt-8 flex flex-col sm:flex-row items-center gap-3 w-full justify-center">
             <Link href={`/reports/${state.data.id}`} className="w-full sm:w-auto">
@@ -387,12 +502,12 @@ export function ReportSubmissionForm({
             </label>
           </div>
 
-          {/* Attachment Dropzone Groundwork (Approved Boundary Groundwork) */}
+          {/* Photo Attachments */}
           <div className="border border-dashed border-slate-300 rounded-xl p-5 bg-slate-50/50">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <PaperclipIcon size={18} className="w-4.5 h-4.5 text-slate-500" />
-                <span className="text-sm font-semibold text-slate-800">Photo Attachments Groundwork</span>
+                <span className="text-sm font-semibold text-slate-800">Photo Attachments</span>
               </div>
               <span className="text-xs text-slate-500">Up to 5 images • Max 10 MB each</span>
             </div>
@@ -414,7 +529,7 @@ export function ReportSubmissionForm({
                   type="file"
                   multiple
                   accept="image/jpeg,image/png,image/webp"
-                  disabled={isPending}
+                  disabled={isPending || isUploadingAttachments}
                   onChange={handleFileChange}
                   className="sr-only"
                 />
@@ -426,21 +541,21 @@ export function ReportSubmissionForm({
               <div className="mt-3 space-y-2">
                 <p className="text-xs font-semibold text-slate-700">Selected Files ({selectedFiles.length}/5):</p>
                 <div className="flex flex-wrap gap-2">
-                  {selectedFiles.map((file, idx) => (
+                  {selectedFiles.map((attachment) => (
                     <div
-                      key={idx}
+                      key={attachment.localId}
                       className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 shadow-2xs"
                     >
-                      <span className="truncate max-w-[150px]">{file.name}</span>
+                      <span className="truncate max-w-[150px]">{attachment.file.name}</span>
                       <span className="text-[10px] text-slate-500">
-                        ({(file.size / 1024).toFixed(0)} KB)
+                        ({(attachment.file.size / 1024).toFixed(0)} KB)
                       </span>
                       <button
                         type="button"
-                        onClick={() => removeFile(idx)}
-                        disabled={isPending}
+                        onClick={() => removeFile(attachment.localId)}
+                        disabled={isPending || isUploadingAttachments}
                         className="text-slate-400 hover:text-rose-600 transition-colors"
-                        aria-label={`Remove ${file.name}`}
+                        aria-label={`Remove ${attachment.file.name}`}
                       >
                         <TrashIcon size={14} className="w-3.5 h-3.5" />
                       </button>
@@ -454,9 +569,8 @@ export function ReportSubmissionForm({
               <p className="mt-2 text-xs text-rose-600 font-medium">{attachmentError}</p>
             )}
 
-            {/* Explicit Scope & Architecture Callout */}
             <div className="mt-3 p-2.5 rounded-lg bg-indigo-50/70 border border-indigo-100 text-[11px] text-indigo-900 leading-relaxed">
-              <strong className="font-semibold text-indigo-950">Storage Policy Groundwork:</strong> Client photo validation enforces the canonical 10 MB limit and image MIME restrictions defined in the approved storage configuration. Direct binary file upload to the private Storage bucket will be enabled in the upcoming storage authorization phase.
+              <strong className="font-semibold text-indigo-950">Secure upload:</strong> Photos are uploaded only after this report is created. Each image is revalidated and authorized on the server before it is stored.
             </div>
           </div>
 
@@ -470,7 +584,7 @@ export function ReportSubmissionForm({
             <Button
               type="submit"
               variant="primary"
-              disabled={isPending}
+              disabled={isPending || isUploadingAttachments}
               className="w-full sm:w-auto min-w-[160px]"
             >
               {isPending ? (

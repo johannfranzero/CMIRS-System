@@ -219,7 +219,7 @@ export default async function ReportDetailPage({ params }: ReportDetailPageProps
             </Card>
 
             {/* 3. Lifecycle Timeline & Activities */}
-            <ReportTimeline report={report} />
+            <ReportTimeline report={report} user={user} />
           </div>
 
           {/* Sidebar Column (1/3 width on large screens) */}

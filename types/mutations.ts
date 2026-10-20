@@ -121,6 +121,33 @@ export interface AttachmentUploadMetaInput {
 }
 
 /**
+ * Result returned after a binary upload and immutable metadata registration succeed.
+ * Storage paths intentionally remain server-only.
+ */
+export interface UploadedAttachmentResult {
+  attachmentId: string;
+  reportId: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+  createdAt: string;
+}
+
+export interface AttachmentViewUrlResult {
+  attachmentId: string;
+  reportId: string;
+  fileName: string;
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+  signedUrl: string;
+  expiresInSeconds: 3600;
+}
+
+export interface SoftDeletedAttachmentResult {
+  attachmentId: string;
+  reportId: string;
+}
+
+/**
  * Generic Validation Result containing sanitized typed data or specific field errors.
  */
 export type ValidationResult<T> =

@@ -151,7 +151,6 @@ export interface ReportVerificationItem {
 
 export interface ReportAttachmentItem {
   id: string;
-  filePath: string;
   fileName: string;
   fileSize: number;
   mimeType: string;
@@ -168,5 +167,4 @@ export interface DetailedReport extends MaintenanceReport {
   verifications: ReportVerificationItem[];
   attachments: ReportAttachmentItem[];
 }
-
 

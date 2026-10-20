@@ -1,28 +1,68 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useTransition } from 'react';
+import Image, { type ImageLoader } from 'next/image';
+import { useRouter } from 'next/navigation';
+import {
+  createAttachmentViewUrlAction,
+  softDeleteReportAttachmentAction,
+  uploadReportAttachmentAction,
+} from '@/actions/reports';
+import type { AuthenticatedUser } from '@/types/auth';
 import type { DetailedReport } from '@/types/reports';
+import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/badge';
 import {
   ClockIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
+  EyeIcon,
   PaperclipIcon,
+  PhotoIcon,
+  TrashIcon,
+  UploadIcon,
   UserIcon,
 } from '@/components/ui/icons';
 
 interface ReportTimelineProps {
   report: DetailedReport;
+  user: AuthenticatedUser;
 }
 
-export function ReportTimeline({ report }: ReportTimelineProps) {
+const signedAttachmentImageLoader: ImageLoader = ({ src }) => src;
+
+export function ReportTimeline({ report, user }: ReportTimelineProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'history' | 'work_logs' | 'verifications' | 'attachments'>('history');
+  const [selectedAttachment, setSelectedAttachment] = useState<File | null>(null);
+  const [attachmentMessage, setAttachmentMessage] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{
+    attachmentId: string;
+    fileName: string;
+    signedUrl: string;
+    expiresAt: number;
+  } | null>(null);
+  const [isAttachmentPending, startAttachmentTransition] = useTransition();
 
   const history = report.statusHistory || [];
   const workLogs = report.workLogs || [];
   const verifications = report.verifications || [];
   const attachments = report.attachments || [];
+  const isTerminal = report.status === 'verified' || report.status === 'cancelled';
+  const hasActiveAssignment = report.assignmentsList.some(
+    (assignment) =>
+      assignment.technicianId === user.id &&
+      ['assigned', 'in_progress', 'on_hold'].includes(assignment.status)
+  );
+  const canUploadAttachment =
+    attachments.length < 5 &&
+    ((user.profile.role === 'coordinator' && !isTerminal) ||
+      (user.profile.role === 'student_personnel' &&
+        report.reporterId === user.id &&
+        ['submitted', 'under_review'].includes(report.status)) ||
+      (user.profile.role === 'technician' && hasActiveAssignment));
+  const canDeleteAttachment = user.profile.role === 'coordinator';
 
   const formatDate = (isoString?: string) => {
     if (!isoString) return '—';
@@ -39,6 +79,78 @@ export function ReportTimeline({ report }: ReportTimelineProps) {
     } catch {
       return isoString;
     }
+  };
+
+  const handleAttachmentUpload = () => {
+    if (!selectedAttachment) {
+      setAttachmentMessage('Choose an image before uploading.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set('reportId', report.id);
+    formData.set('attachment', selectedAttachment);
+
+    startAttachmentTransition(async () => {
+      setAttachmentMessage(null);
+      const result = await uploadReportAttachmentAction(formData);
+      if (result.status !== 'success') {
+        setAttachmentMessage(result.message ?? 'Unable to upload the attachment.');
+        return;
+      }
+
+      setSelectedAttachment(null);
+      setAttachmentMessage('Attachment uploaded successfully.');
+      router.refresh();
+    });
+  };
+
+  const handleAttachmentView = (attachmentId: string) => {
+    const formData = new FormData();
+    formData.set('reportId', report.id);
+    formData.set('attachmentId', attachmentId);
+
+    startAttachmentTransition(async () => {
+      setAttachmentMessage(null);
+      const result = await createAttachmentViewUrlAction(formData);
+      if (result.status !== 'success' || !result.data) {
+        setPreview(null);
+        setAttachmentMessage(result.message ?? 'Unable to create a viewing link.');
+        return;
+      }
+
+      setPreview({
+        attachmentId: result.data.attachmentId,
+        fileName: result.data.fileName,
+        signedUrl: result.data.signedUrl,
+        expiresAt: Date.now() + result.data.expiresInSeconds * 1000,
+      });
+    });
+  };
+
+  const handleAttachmentDelete = (attachmentId: string) => {
+    if (!window.confirm('Remove this attachment from the report? The original file remains retained for authorized cleanup.')) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set('reportId', report.id);
+    formData.set('attachmentId', attachmentId);
+
+    startAttachmentTransition(async () => {
+      setAttachmentMessage(null);
+      const result = await softDeleteReportAttachmentAction(formData);
+      if (result.status !== 'success') {
+        setAttachmentMessage(result.message ?? 'Unable to remove the attachment.');
+        return;
+      }
+
+      if (preview?.attachmentId === attachmentId) {
+        setPreview(null);
+      }
+      setAttachmentMessage('Attachment removed from this report.');
+      router.refresh();
+    });
   };
 
   return (
@@ -249,6 +361,40 @@ export function ReportTimeline({ report }: ReportTimelineProps) {
         {/* TAB 4: Attachments */}
         {activeTab === 'attachments' && (
           <div>
+            {canUploadAttachment && (
+              <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
+                <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                  <label className="flex-1 text-xs font-semibold text-slate-800">
+                    Add a photo
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="mt-1.5 block w-full text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
+                      disabled={isAttachmentPending}
+                      onChange={(event) => setSelectedAttachment(event.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={!selectedAttachment || isAttachmentPending}
+                    onClick={handleAttachmentUpload}
+                    leftIcon={<UploadIcon size={14} />}
+                  >
+                    {isAttachmentPending ? 'Working...' : 'Upload Photo'}
+                  </Button>
+                </div>
+                <p className="mt-2 text-[11px] text-slate-600">JPG, PNG, or WebP only; maximum 10 MB per image and 5 active attachments per report.</p>
+              </div>
+            )}
+
+            {attachmentMessage && (
+              <p role="status" className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-700">
+                {attachmentMessage}
+              </p>
+            )}
+
             {attachments.length === 0 ? (
               <div className="text-center py-8 text-xs text-slate-500">
                 <PaperclipIcon size={24} className="w-6 h-6 mx-auto mb-2 text-slate-400" />
@@ -264,7 +410,7 @@ export function ReportTimeline({ report }: ReportTimelineProps) {
                   >
                     <div className="flex items-start gap-2.5">
                       <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-                        <PaperclipIcon size={16} className="w-4 h-4" />
+                        <PhotoIcon size={16} className="w-4 h-4" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-slate-900 truncate">
@@ -280,14 +426,71 @@ export function ReportTimeline({ report }: ReportTimelineProps) {
                       <span>By {att.uploaderName || 'Reporter'}</span>
                       <span>{formatDate(att.createdAt)}</span>
                     </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isAttachmentPending}
+                        onClick={() => handleAttachmentView(att.id)}
+                        leftIcon={<EyeIcon size={14} />}
+                      >
+                        View Photo
+                      </Button>
+                      {canDeleteAttachment && (
+                        <Button
+                          type="button"
+                          variant="danger"
+                          size="sm"
+                          disabled={isAttachmentPending}
+                          onClick={() => handleAttachmentDelete(att.id)}
+                          leftIcon={<TrashIcon size={14} />}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* Scope Limitation Notice */}
+            {preview && (
+              <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
+                  <p className="truncate text-xs font-semibold text-slate-800">Preview: {preview.fileName}</p>
+                  <a
+                    href={preview.signedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 text-xs font-semibold text-indigo-700 hover:text-indigo-900"
+                  >
+                    Open image
+                  </a>
+                </div>
+                <div className="relative h-[32rem] p-4">
+                  <Image
+                    loader={signedAttachmentImageLoader}
+                    unoptimized
+                    fill
+                    sizes="(min-width: 640px) 42rem, 100vw"
+                    src={preview.signedUrl}
+                    alt={`Attachment preview for ${preview.fileName}`}
+                    className="rounded-lg object-contain bg-slate-100"
+                    onError={() => {
+                      setPreview(null);
+                      setAttachmentMessage('The viewing link has expired or the image is no longer available. Generate a new link to try again.');
+                    }}
+                  />
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    This private viewing link expires at {new Date(preview.expiresAt).toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed">
-              <strong className="font-semibold text-slate-800">Storage Security Notice:</strong> Attachment files in the private bucket (<code className="text-indigo-700">report-attachments</code>) are governed by authenticated Supabase Storage RLS policies. Signed URLs and download endpoints will be integrated in the authorized Storage implementation phase.
+              <strong className="font-semibold text-slate-800">Storage Security:</strong> Photos stay in a private bucket. Viewing links are generated on demand after server-side authorization and expire after one hour.
             </div>
           </div>
         )}

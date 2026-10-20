@@ -28,6 +28,9 @@ import type {
   StatusTransitionInput,
   WorkLogInput,
   VerificationInput,
+  AttachmentViewUrlResult,
+  SoftDeletedAttachmentResult,
+  UploadedAttachmentResult,
 } from '../types/mutations';
 import type { ReportStatus, PriorityLevel } from '../types/reports';
 import type { AuthenticatedUser } from '../types/auth';
@@ -50,6 +53,12 @@ import {
   verifyReportRecord,
   type MutationContext,
 } from '../utils/reports/mutations.ts';
+import {
+  createAttachmentViewUrl,
+  softDeleteReportAttachment,
+  uploadReportAttachment,
+  type StorageMutationContext,
+} from '../utils/storage/server.ts';
 
 /**
  * Initial idle state contract for React 19 `useActionState` hooks.
@@ -96,6 +105,53 @@ async function triggerCacheRevalidation(paths: string[] = ['/', '/reports']): Pr
       console.warn('[triggerCacheRevalidation] Notice: Route cache revalidation skipped in non-Next runtime:', msg);
     }
   }
+}
+
+type AttachmentActionPayload = {
+  reportId?: unknown;
+  attachmentId?: unknown;
+  attachment?: unknown;
+  file?: unknown;
+  uploadedBy?: unknown;
+  uploaderId?: unknown;
+  filePath?: unknown;
+  storagePath?: unknown;
+  role?: unknown;
+};
+
+function extractAttachmentActionPayload(
+  payload: FormData | AttachmentActionPayload,
+  allowedKeys: readonly string[]
+): { success: true; data: Record<string, unknown> } | { success: false; message: string } {
+  const forbiddenKeys = new Set(['uploadedBy', 'uploaderId', 'filePath', 'storagePath', 'role']);
+
+  if (payload instanceof FormData) {
+    for (const key of payload.keys()) {
+      if (forbiddenKeys.has(key) || !allowedKeys.includes(key)) {
+        return { success: false, message: 'Invalid attachment request.' };
+      }
+    }
+
+    return {
+      success: true,
+      data: Object.fromEntries(allowedKeys.map((key) => [key, payload.get(key)])),
+    };
+  }
+
+  for (const key of Object.keys(payload)) {
+    if (forbiddenKeys.has(key) || !allowedKeys.includes(key)) {
+      return { success: false, message: 'Invalid attachment request.' };
+    }
+  }
+
+  return {
+    success: true,
+    data: payload as Record<string, unknown>,
+  };
+}
+
+function getStorageContext(user: AuthenticatedUser, context?: MutationContext): StorageMutationContext {
+  return { user, supabase: context?.supabase };
 }
 
 // =============================================================================
@@ -605,4 +661,104 @@ export async function verifyReportAction(
       : 'Report verification rejected; ticket reopened for repair.',
     data: result.data,
   };
+}
+
+// =============================================================================
+// 8. Attachment Actions (Phase 4A)
+// =============================================================================
+
+/**
+ * Server Action: Uploads a single validated image to an existing report, then registers
+ * immutable metadata. Storage paths and uploader identity are derived exclusively on the server.
+ */
+export async function uploadReportAttachmentAction(
+  payload: FormData | AttachmentActionPayload,
+  context?: MutationContext
+): Promise<ActionFormState<UploadedAttachmentResult>> {
+  const extracted = extractAttachmentActionPayload(payload, ['reportId', 'attachment']);
+  if (!extracted.success) {
+    return { status: 'error', message: extracted.message };
+  }
+
+  const user = await resolveUser(context);
+  if (!user || !user.profile.is_active) {
+    return { status: 'error', message: 'Authentication required. Please log in with an active account.' };
+  }
+
+  const result = await uploadReportAttachment(
+    { reportId: extracted.data.reportId, file: extracted.data.attachment },
+    getStorageContext(user, context)
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      status: 'error',
+      message: result.error ?? 'Unable to upload the attachment.',
+      fieldErrors: result.fieldErrors,
+    };
+  }
+
+  await triggerCacheRevalidation(['/', '/reports', `/reports/${result.data.reportId}`]);
+  return { status: 'success', message: 'Attachment uploaded successfully.', data: result.data };
+}
+
+/**
+ * Server Action: Creates a fresh, one-hour signed URL only after report and attachment access
+ * have been checked under the caller's authenticated session.
+ */
+export async function createAttachmentViewUrlAction(
+  payload: FormData | AttachmentActionPayload,
+  context?: MutationContext
+): Promise<ActionFormState<AttachmentViewUrlResult>> {
+  const extracted = extractAttachmentActionPayload(payload, ['reportId', 'attachmentId']);
+  if (!extracted.success) {
+    return { status: 'error', message: extracted.message };
+  }
+
+  const user = await resolveUser(context);
+  if (!user || !user.profile.is_active) {
+    return { status: 'error', message: 'Authentication required. Please log in with an active account.' };
+  }
+
+  const result = await createAttachmentViewUrl(
+    { reportId: extracted.data.reportId, attachmentId: extracted.data.attachmentId },
+    getStorageContext(user, context)
+  );
+
+  if (!result.success || !result.data) {
+    return { status: 'error', message: result.error ?? 'Unable to create a viewing link.' };
+  }
+
+  return { status: 'success', message: 'Viewing link created.', data: result.data };
+}
+
+/**
+ * Server Action: Uses the approved coordinator-only soft-delete RPC. It never deletes the
+ * immutable metadata row or hard-deletes the Storage object.
+ */
+export async function softDeleteReportAttachmentAction(
+  payload: FormData | AttachmentActionPayload,
+  context?: MutationContext
+): Promise<ActionFormState<SoftDeletedAttachmentResult>> {
+  const extracted = extractAttachmentActionPayload(payload, ['reportId', 'attachmentId']);
+  if (!extracted.success) {
+    return { status: 'error', message: extracted.message };
+  }
+
+  const user = await resolveUser(context);
+  if (!user || !user.profile.is_active) {
+    return { status: 'error', message: 'Authentication required. Please log in with an active account.' };
+  }
+
+  const result = await softDeleteReportAttachment(
+    { reportId: extracted.data.reportId, attachmentId: extracted.data.attachmentId },
+    getStorageContext(user, context)
+  );
+
+  if (!result.success || !result.data) {
+    return { status: 'error', message: result.error ?? 'Unable to remove the attachment.' };
+  }
+
+  await triggerCacheRevalidation(['/', '/reports', `/reports/${result.data.reportId}`]);
+  return { status: 'success', message: 'Attachment removed from this report.', data: result.data };
 }

@@ -492,7 +492,7 @@ test('Verification: Enforces detailed notes when repair is marked unsatisfactory
   assert.equal(failedWithValidNotes.success, true);
 });
 
-test('Attachment Metadata: Validates file size, MIME types, and file extensions per Storage RLS', () => {
+test('Attachment Metadata: Validates file size and MIME types while storage extensions stay server-derived', () => {
   // Valid attachment metadata
   const valid = validateAttachmentMetaInput({
     reportId: VALID_UUID_1,
@@ -521,15 +521,15 @@ test('Attachment Metadata: Validates file size, MIME types, and file extensions 
   assert.equal(badMime.success, false);
   assert.ok(badMime.errors.mimeType);
 
-  // Disallowed extension (e.g. .exe masquerading with image MIME)
-  const badExt = validateAttachmentMetaInput({
+  // The original display name cannot determine the persisted Storage extension.
+  // Content signatures are verified by the server-side upload layer.
+  const suspiciousName = validateAttachmentMetaInput({
     reportId: VALID_UUID_1,
     fileName: 'malware.exe',
     fileSize: 100000,
     mimeType: 'image/png',
   });
-  assert.equal(badExt.success, false);
-  assert.ok(badExt.errors.fileName);
+  assert.equal(suspiciousName.success, true);
 
   // Exceeding 10 MB limit (10,485,760 bytes)
   const oversized = validateAttachmentMetaInput({
