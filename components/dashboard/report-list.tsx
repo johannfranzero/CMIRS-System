@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { MaintenanceReport } from '@/types/reports';
 import { UserRole } from '@/types/auth';
@@ -256,14 +257,22 @@ export function ReportList({
                     key={report.id}
                     className="hover:bg-slate-50/80 transition-colors group cursor-default"
                   >
-                    <td className="px-4 py-3.5 font-mono text-xs font-semibold text-indigo-700 whitespace-nowrap">
-                      {report.trackingNumber}
+                    <td className="px-4 py-3.5 font-mono text-xs font-semibold whitespace-nowrap">
+                      <Link
+                        href={`/reports/${report.id}`}
+                        className="text-indigo-700 hover:text-indigo-900 hover:underline"
+                      >
+                        {report.trackingNumber}
+                      </Link>
                     </td>
 
                     <td className="px-4 py-3.5 max-w-xs">
-                      <div className="font-medium text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-1">
+                      <Link
+                        href={`/reports/${report.id}`}
+                        className="font-medium text-slate-900 hover:text-indigo-600 transition-colors line-clamp-1 block"
+                      >
                         {report.title}
-                      </div>
+                      </Link>
                       <div className="text-xs text-slate-500 mt-0.5">
                         {report.category}
                       </div>
@@ -321,9 +330,12 @@ export function ReportList({
               className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs flex flex-col gap-3"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-xs font-bold text-indigo-700">
+                <Link
+                  href={`/reports/${report.id}`}
+                  className="font-mono text-xs font-bold text-indigo-700 hover:underline"
+                >
                   {report.trackingNumber}
-                </span>
+                </Link>
                 <PriorityBadge
                   priority={report.priority}
                   isUrgentHazard={report.isUrgentHazard}
@@ -331,9 +343,12 @@ export function ReportList({
               </div>
 
               <div>
-                <h4 className="text-sm font-semibold text-slate-900 leading-snug">
+                <Link
+                  href={`/reports/${report.id}`}
+                  className="text-sm font-semibold text-slate-900 hover:text-indigo-600 transition-colors leading-snug block"
+                >
                   {report.title}
-                </h4>
+                </Link>
                 <p className="text-xs text-slate-500 mt-1 line-clamp-2">
                   {report.description}
                 </p>
