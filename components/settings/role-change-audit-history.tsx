@@ -2,7 +2,8 @@ import type { RoleChangeAuditHistoryEntry } from '@/types/settings';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { ClockIcon } from '@/components/ui/icons';
-import { formatAuditTimestamp, formatSettingsRole } from '@/utils/settings/transform';
+import { formatRoleLabel } from '@/types/auth';
+import { formatAuditTimestamp } from '@/utils/settings/transform';
 
 export function RoleChangeAuditHistory({ entries }: { entries: RoleChangeAuditHistoryEntry[] }) {
   if (entries.length === 0) {
@@ -32,8 +33,8 @@ export function RoleChangeAuditHistory({ entries }: { entries: RoleChangeAuditHi
           {entries.map((entry) => (
             <tr key={entry.id} className="border-b border-slate-100 last:border-0">
               <th scope="row" className="whitespace-nowrap px-2 py-3 font-medium text-slate-800">{entry.affectedUserName}</th>
-              <td className="px-2 py-3"><Badge variant="neutral" size="sm">{formatSettingsRole(entry.oldRole)}</Badge></td>
-              <td className="px-2 py-3"><Badge variant="info" size="sm">{formatSettingsRole(entry.newRole)}</Badge></td>
+              <td className="px-2 py-3"><Badge variant="neutral" size="sm">{formatRoleLabel(entry.oldRole)}</Badge></td>
+              <td className="px-2 py-3"><Badge variant="info" size="sm">{formatRoleLabel(entry.newRole)}</Badge></td>
               <td className="whitespace-nowrap px-2 py-3 text-slate-600">{entry.actorName}</td>
               <td className="whitespace-nowrap px-2 py-3 text-slate-600">{formatAuditTimestamp(entry.createdAt)}</td>
             </tr>

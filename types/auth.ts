@@ -39,6 +39,22 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 /**
+ * Formats a role value into a human-readable display label.
+ */
+export function formatRoleLabel(role: UserRole | string | undefined | null): string {
+  if (!role) return 'Unknown Role';
+
+  if ((USER_ROLES as readonly string[]).includes(role)) {
+    return ROLE_LABELS[role as UserRole];
+  }
+
+  return role
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
  * User Profile model representing the `public.profiles` database table.
  */
 export interface UserProfile {

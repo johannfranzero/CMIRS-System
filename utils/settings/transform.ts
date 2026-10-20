@@ -1,17 +1,9 @@
-import type { UserRole } from '@/types/auth';
+import { formatRoleLabel, type UserRole } from '../../types/auth.ts';
 import type {
   RoleChangeAuditHistoryEntry,
   SettingsUserDirectoryResult,
   SettingsUserDirectoryEntry,
 } from '@/types/settings';
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  student_personnel: 'Student / Personnel',
-  coordinator: 'Coordinator',
-  technician: 'Technician',
-  administrator: 'Administrator',
-  management: 'Management',
-};
 
 export const SETTINGS_USER_DIRECTORY_ERROR_MESSAGE =
   'The user directory is temporarily unavailable. Please try again shortly.';
@@ -41,10 +33,6 @@ function relationName(
 ): string {
   const value = Array.isArray(relation) ? relation[0]?.full_name : relation?.full_name;
   return typeof value === 'string' && value.trim() ? value.trim() : 'Name unavailable';
-}
-
-export function formatSettingsRole(role: UserRole): string {
-  return ROLE_LABELS[role];
 }
 
 export function mapSettingsUser(user: RawSettingsUser): SettingsUserDirectoryEntry {
@@ -129,7 +117,7 @@ export function filterSettingsUsers(
   }
 
   return users.filter((user) =>
-    [user.fullName, user.email, formatSettingsRole(user.role), user.isActive ? 'active' : 'inactive']
+    [user.fullName, user.email, formatRoleLabel(user.role), user.isActive ? 'active' : 'inactive']
       .some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
   );
 }

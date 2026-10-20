@@ -31,6 +31,16 @@ The `/settings` placeholder is now an administrator-only, read-only settings vie
 | `config/navigation.ts` | Marked Settings active/non-placeholder without changing authorized roles. |
 | `tests/unit/settings.test.mjs` | Added local fixture and source-contract coverage for settings transforms, DAL limits, and page contract. |
 
+## Directory Completeness Remediation
+
+The original directory query was unbounded and did not request an exact total, so a backend row cap could have produced a partial list that appeared complete.
+
+- The directory query now requests an exact count and is explicitly bounded to `SETTINGS_USER_DIRECTORY_MAX_ROWS` (1,000) with a `range(0, 999)` request.
+- A directory is displayed only when the exact total equals the number of rows returned. An empty result is valid only when both values are zero.
+- Missing counts, count/row mismatches, and over-limit results produce an `incomplete` state with no accounts rendered; query failures produce an `error` state with no accounts rendered.
+- The page uses an accessible alert that states the returned and total counts when known and explicitly says that no partial directory is displayed.
+- The existing administrator route guard, authenticated server-side Supabase client, RLS-dependent query, displayed-field allowlist, and read-only behavior remain unchanged.
+
 ## Displayed Data and Authorization Boundaries
 
 | View | Displayed fields | Authorization |
@@ -65,10 +75,22 @@ All commands below completed successfully.
 
 The deferred RLS runner and all remote integration tests were not executed.
 
+### Completeness Remediation Verification
+
+All remediation checks below completed successfully against local mocks and source only.
+
+| Command | Result |
+|---|---|
+| `node --test tests/unit/settings.test.mjs` | Passed: 7 tests, 0 failures. Covers complete, empty, over-limit/incomplete, and query-error directory states. |
+| `node --test tests/unit/*.test.mjs` | Passed: 128 tests, 0 failures. Existing expected test logs and module-type warnings were emitted. |
+| `npx tsc --noEmit` | Passed with exit code 0. |
+| `npm run lint` | Passed with exit code 0. |
+
 ## Limitations and Unresolved Issues
 
 - The user-directory and audit RLS behavior, production data volume, and production relation shape were intentionally not verified remotely under this phase's local-only restrictions.
 - Audit history is deliberately limited to the latest 100 rows; no pagination or export is included.
+- The directory intentionally withholds all accounts once the 1,000-row maximum is reached or an exact count is unavailable. A separately approved paginated directory would be needed to browse directories larger than this cap.
 - A failed section displays a safe unavailable state rather than a partial/fabricated result. A successful empty response displays an empty state.
 - Settings has no role-management, preferences, password, reference-data management, or notifications capability. Those features remain blocked or separately scoped.
 - Existing Phase 4A, Phase 4B.1, and Phase 4B.2 work was treated as baseline and was not reverted, overwritten, or reformatted.

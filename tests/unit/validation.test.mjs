@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { formatRoleLabel } from '../../types/auth.ts';
 
 // Standalone verification of the logic implemented in utils/auth/validation.ts
 
@@ -10,14 +11,6 @@ const USER_ROLES = [
   'administrator',
   'management',
 ];
-
-const ROLE_LABELS = {
-  student_personnel: 'Student / Personnel',
-  coordinator: 'Maintenance Coordinator',
-  technician: 'Maintenance Technician',
-  administrator: 'School Administrator',
-  management: 'School Management',
-};
 
 function isValidEmail(email) {
   if (!email || typeof email !== 'string') return false;
@@ -55,17 +48,6 @@ function sanitizeRedirectUrl(targetUrl, defaultUrl = '/') {
 
 function isUserRole(value) {
   return typeof value === 'string' && USER_ROLES.includes(value);
-}
-
-function formatRoleLabel(role) {
-  if (!role) return 'Unknown Role';
-  if (isUserRole(role)) {
-    return ROLE_LABELS[role];
-  }
-  return role
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
 }
 
 test('isValidEmail accepts valid institutional emails', () => {
@@ -116,11 +98,14 @@ test('isUserRole validates all five canonical roles', () => {
   assert.equal(isUserRole(''), false);
 });
 
-test('formatRoleLabel maps canonical roles to UI labels', () => {
+test('formatRoleLabel maps every canonical role and preserves fallback behavior', () => {
   assert.equal(formatRoleLabel('student_personnel'), 'Student / Personnel');
   assert.equal(formatRoleLabel('coordinator'), 'Maintenance Coordinator');
   assert.equal(formatRoleLabel('technician'), 'Maintenance Technician');
   assert.equal(formatRoleLabel('administrator'), 'School Administrator');
   assert.equal(formatRoleLabel('management'), 'School Management');
   assert.equal(formatRoleLabel(null), 'Unknown Role');
+  assert.equal(formatRoleLabel(undefined), 'Unknown Role');
+  assert.equal(formatRoleLabel(''), 'Unknown Role');
+  assert.equal(formatRoleLabel('field_technician'), 'Field Technician');
 });

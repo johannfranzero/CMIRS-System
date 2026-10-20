@@ -8,13 +8,13 @@ import {
   createSettingsUserDirectoryResult,
   filterSettingsUsers,
   formatAuditTimestamp,
-  formatSettingsRole,
   isSettingsUserDirectoryComplete,
   mapRoleChangeAudit,
   mapSettingsUser,
   SETTINGS_USER_DIRECTORY_ERROR_MESSAGE,
   SETTINGS_USER_DIRECTORY_INCOMPLETE_MESSAGE,
 } from '../../utils/settings/transform.ts';
+import { formatRoleLabel } from '../../types/auth.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -136,7 +136,7 @@ test('Settings transforms: role-change audit maps actual related names and safe 
     newRole: 'technician',
     createdAt: '2026-10-20T04:00:00.000Z',
   });
-  assert.equal(formatSettingsRole('administrator'), 'Administrator');
+  assert.equal(formatRoleLabel('administrator'), 'School Administrator');
   assert.equal(formatAuditTimestamp('invalid'), 'Timestamp unavailable');
 });
 
@@ -172,6 +172,7 @@ test('Settings page: retains administrator-only server guard and renders safe in
   assert.ok(page.includes('getAdministratorSettingsData()'));
   assert.ok(page.includes("settingsData.userDirectory.state === 'incomplete'"));
   assert.ok(page.includes('No partial directory is displayed.'));
+  assert.equal(page.includes('formatSettingsRole'), false);
   assert.equal(page.includes('<form'), false);
   assert.equal(page.includes('onSubmit'), false);
   assert.ok(loading.includes('role="status"'));

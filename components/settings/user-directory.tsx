@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import type { SettingsUserDirectoryEntry } from '@/types/settings';
-import { filterSettingsUsers, formatSettingsRole } from '@/utils/settings/transform';
+import { formatRoleLabel } from '@/types/auth';
+import { filterSettingsUsers } from '@/utils/settings/transform';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -90,7 +91,7 @@ export function UserDirectory({ users }: UserDirectoryProps) {
                 <tr key={user.id} className="border-b border-slate-100 last:border-0">
                   <th scope="row" className="whitespace-nowrap px-2 py-3 font-medium text-slate-800">{user.fullName}</th>
                   <td className="px-2 py-3 text-slate-600">{user.email}</td>
-                  <td className="px-2 py-3"><Badge variant="neutral" size="sm">{formatSettingsRole(user.role)}</Badge></td>
+                  <td className="px-2 py-3"><Badge variant="neutral" size="sm">{formatRoleLabel(user.role)}</Badge></td>
                   <td className="px-2 py-3">
                     <Badge variant={user.isActive ? 'success' : 'neutral'} size="sm">
                       {user.isActive ? 'Active' : 'Inactive'}

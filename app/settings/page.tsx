@@ -6,7 +6,7 @@ import { UserDirectory } from '@/components/settings/user-directory';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ExclamationTriangleIcon, SettingsIcon, UserIcon } from '@/components/ui/icons';
-import { formatSettingsRole } from '@/utils/settings/transform';
+import { formatRoleLabel } from '@/types/auth';
 
 export const instant = false;
 
@@ -66,7 +66,7 @@ export default async function SettingsPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Badge variant="info">{formatSettingsRole(user.profile.role)}</Badge>
+                <Badge variant="info">{formatRoleLabel(user.profile.role)}</Badge>
                 <Badge variant={user.profile.is_active ? 'success' : 'neutral'}>
                   {user.profile.is_active ? 'Active account' : 'Inactive account'}
                 </Badge>

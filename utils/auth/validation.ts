@@ -1,4 +1,6 @@
-import { UserRole, USER_ROLES, ROLE_LABELS } from '@/types/auth';
+import { USER_ROLES, type UserRole } from '@/types/auth';
+
+export { formatRoleLabel } from '@/types/auth';
 
 /**
  * Validates whether an email string has a valid RFC-like format.
@@ -67,19 +69,4 @@ export function sanitizeRedirectUrl(
  */
 export function isUserRole(value: unknown): value is UserRole {
   return typeof value === 'string' && (USER_ROLES as readonly string[]).includes(value);
-}
-
-/**
- * Formats a role value into a human-readable display label.
- */
-export function formatRoleLabel(role: UserRole | string | undefined | null): string {
-  if (!role) return 'Unknown Role';
-  if (isUserRole(role)) {
-    return ROLE_LABELS[role];
-  }
-  // Fallback for custom or unmapped string
-  return role
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
 }
