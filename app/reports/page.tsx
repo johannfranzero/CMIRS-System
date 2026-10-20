@@ -10,7 +10,7 @@ import {
   ChevronRightIcon,
   ExclamationTriangleIcon,
 } from '@/components/ui/icons';
-import { getReportsQueue } from '@/utils/reports/dal';
+import { getReportsQueue, buildReportsQueueUrl } from '@/utils/reports/dal';
 import { formatRoleLabel } from '@/utils/auth/validation';
 import { ReportStatus } from '@/types/reports';
 
@@ -55,32 +55,62 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
     ? 'Maintenance service queue for assigned work orders and repair dispatches.'
     : 'Campus-wide incident and maintenance report management queue.';
 
+  const prevPageUrl = buildReportsQueueUrl({
+    page: queueResult.currentPage - 1,
+    status: statusFilter,
+    category: categoryFilter,
+    search: searchQuery,
+  });
+
+  const nextPageUrl = buildReportsQueueUrl({
+    page: queueResult.currentPage + 1,
+    status: statusFilter,
+    category: categoryFilter,
+    search: searchQuery,
+  });
+
   return (
     <AppShell user={user} pageTitle="Maintenance Reports Queue">
       <div className="flex flex-col gap-6">
         {/* Live Data Connection Banner with Active Role Perspective */}
-        <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm">
-          <div className="flex items-center gap-2.5 text-emerald-950">
-            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse shrink-0" />
-            <p>
-              <strong className="font-semibold text-emerald-900">Live Backend Connected:</strong> Serving records from Supabase Cloud. PostgreSQL Row Level Security actively enforces your role scope.
-            </p>
+        {!queueResult.error ? (
+          <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm">
+            <div className="flex items-center gap-2.5 text-emerald-950">
+              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse shrink-0" />
+              <p>
+                <strong className="font-semibold text-emerald-900">Live Backend Connected:</strong> Serving records from Supabase Cloud. PostgreSQL Row Level Security actively enforces your role scope.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                Perspective: {formatRoleLabel(role)}
+              </span>
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-white text-emerald-700 border border-emerald-200">
+                Live RLS Active
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-              Perspective: {formatRoleLabel(role)}
-            </span>
-            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-white text-emerald-700 border border-emerald-200">
-              Live RLS Active
-            </span>
+        ) : (
+          <div className="bg-amber-50/90 border border-amber-200 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm">
+            <div className="flex items-center gap-2.5 text-amber-950">
+              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+              <p>
+                <strong className="font-semibold text-amber-900">Database Service Notice:</strong> Unable to complete live query. Fail-closed protection active.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                Degraded State
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Database Query Warning / Notice if present */}
+        {/* Database Query Warning / Notice if present (Sanitized message) */}
         {queueResult.error && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2">
             <ExclamationTriangleIcon size={16} className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Database Notice: {queueResult.error}</span>
+            <span>Notice: {queueResult.error}</span>
           </div>
         )}
 
@@ -138,7 +168,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
             }
           />
 
-          {/* Pagination Controls */}
+          {/* Pagination Controls with Filter Parameter Preservation */}
           {queueResult.totalPages > 1 && (
             <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
               <p>
@@ -149,11 +179,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
 
               <div className="flex items-center gap-2">
                 {queueResult.currentPage > 1 ? (
-                  <Link
-                    href={`/reports?page=${queueResult.currentPage - 1}${
-                      statusFilter !== 'all' ? `&status=${statusFilter}` : ''
-                    }`}
-                  >
+                  <Link href={prevPageUrl}>
                     <Button variant="outline" size="sm" leftIcon={<ChevronLeftIcon className="w-3.5 h-3.5" />}>
                       Previous
                     </Button>
@@ -169,11 +195,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                 </span>
 
                 {queueResult.hasMore ? (
-                  <Link
-                    href={`/reports?page=${queueResult.currentPage + 1}${
-                      statusFilter !== 'all' ? `&status=${statusFilter}` : ''
-                    }`}
-                  >
+                  <Link href={nextPageUrl}>
                     <Button variant="outline" size="sm" rightIcon={<ChevronRightIcon className="w-3.5 h-3.5" />}>
                       Next
                     </Button>

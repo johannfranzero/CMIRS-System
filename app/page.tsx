@@ -50,28 +50,44 @@ export default async function DashboardPage() {
     <AppShell user={user} pageTitle="Operations Dashboard">
       <div className="flex flex-col gap-6">
         {/* Live Data Connection Banner with Active Role Perspective */}
-        <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm">
-          <div className="flex items-center gap-2.5 text-emerald-950">
-            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse shrink-0" />
-            <p>
-              <strong className="font-semibold text-emerald-900">Live Backend Connected:</strong> Serving records from Supabase Cloud. PostgreSQL Row Level Security actively enforces your role scope.
-            </p>
+        {!kpiResult.error && !queueResult.error ? (
+          <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm">
+            <div className="flex items-center gap-2.5 text-emerald-950">
+              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse shrink-0" />
+              <p>
+                <strong className="font-semibold text-emerald-900">Live Backend Connected:</strong> Serving records from Supabase Cloud. PostgreSQL Row Level Security actively enforces your role scope.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                Perspective: {formatRoleLabel(role)}
+              </span>
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-white text-emerald-700 border border-emerald-200">
+                Live RLS Active
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-              Perspective: {formatRoleLabel(role)}
-            </span>
-            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-white text-emerald-700 border border-emerald-200">
-              Live RLS Active
-            </span>
+        ) : (
+          <div className="bg-amber-50/90 border border-amber-200 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm">
+            <div className="flex items-center gap-2.5 text-amber-950">
+              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+              <p>
+                <strong className="font-semibold text-amber-900">Database Service Notice:</strong> Operational queries experienced a degraded state. Fail-closed security protection active.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                Degraded State
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Database Query Warning / Notice if present */}
-        {kpiResult.error && (
+        {/* Database Query Warning / Notice if present (Sanitized) */}
+        {(kpiResult.error || queueResult.error) && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2">
             <ExclamationTriangleIcon size={16} className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Database Notice: {kpiResult.error}</span>
+            <span>Notice: {kpiResult.error || queueResult.error}</span>
           </div>
         )}
 

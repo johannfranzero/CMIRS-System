@@ -1,65 +1,41 @@
 import { createClient } from '@/utils/supabase/server';
 import { getCurrentUserAndProfile } from '@/utils/auth/server';
 import {
-  MaintenanceReport,
-  DashboardStats,
   ReportQueueParams,
   PaginatedReportsResult,
   DashboardKpiResult,
   PriorityLevel,
   ReportStatus,
-  AssignmentStatus,
 } from '@/types/reports';
+import {
+  RawDbReportRow,
+  transformDbReportToMaintenanceReport,
+  calculateKpiStatsFromDbReports,
+  getFacilityBreakdownFromReports,
+  getPhilippineWeekBounds,
+  isDateInPhilippineWeek,
+  isDatasetTruncated,
+  buildReportsQueueUrl,
+  sanitizeErrorMessage,
+} from './transform';
 
-/**
- * Raw joined record shape returned from Supabase PostgREST queries.
- */
-export interface RawDbReportRow {
-  id: string;
-  report_number: string;
-  title: string;
-  description: string;
-  status: ReportStatus;
-  is_urgent_hazard: boolean;
-  confirmed_priority: PriorityLevel | null;
-  created_at: string;
-  updated_at: string;
-  category_id?: string;
-  location_id?: string;
-  reporter_id?: string;
-  categories?: {
-    id?: string;
-    name?: string;
-    description?: string;
-  } | null;
-  locations?: {
-    id?: string;
-    building_name?: string;
-    floor?: string;
-    room?: string;
-    description?: string;
-  } | null;
-  reporter?: {
-    id?: string;
-    full_name?: string;
-    role?: string;
-    email?: string;
-  } | null;
-  assignments?: Array<{
-    id?: string;
-    status?: AssignmentStatus;
-    assigned_at?: string;
-    technician_id?: string;
-    technician?: {
-      id?: string;
-      full_name?: string;
-    } | null;
-  }> | null;
-}
+// Re-export pure helpers for seamless application-wide consumption and testing
+export {
+  type RawDbReportRow,
+  transformDbReportToMaintenanceReport,
+  calculateKpiStatsFromDbReports,
+  getFacilityBreakdownFromReports,
+  getPhilippineWeekBounds,
+  isDateInPhilippineWeek,
+  isDatasetTruncated,
+  buildReportsQueueUrl,
+  sanitizeErrorMessage,
+};
 
 /**
  * Verified PostgREST column selection query including foreign-key joins.
  * Matches schemas defined in `20261018000001_core_schema.sql`.
+ * Uses `categories!inner` to enforce inner join semantics for category filtering.
  */
 export const SELECT_REPORTS_FIELDS = `
   id,
@@ -74,7 +50,7 @@ export const SELECT_REPORTS_FIELDS = `
   category_id,
   location_id,
   reporter_id,
-  categories (
+  categories!inner (
     id,
     name,
     description
@@ -105,155 +81,6 @@ export const SELECT_REPORTS_FIELDS = `
 `;
 
 /**
- * Transforms a raw database joined row into the canonical UI `MaintenanceReport` model.
- * 
- * Key business rules:
- * - `confirmed_priority` is nullable (initial reports have NULL until coordinator triage).
- * - `assignedTechnician` is extracted from active assignments (`assigned`, `in_progress`, `on_hold`),
- *   ignoring declined or reassigned records when active work exists.
- * - Missing relations fail gracefully with safe fallback labels.
- */
-export function transformDbReportToMaintenanceReport(row: RawDbReportRow): MaintenanceReport {
-  // Extract active assignment if present
-  let activeAssignment: RawDbReportRow['assignments'] extends (infer T)[] | null | undefined
-    ? T | undefined
-    : undefined = undefined;
-
-  if (Array.isArray(row.assignments) && row.assignments.length > 0) {
-    // 1. Look for active work status first
-    const activeList = row.assignments.filter(
-      (a) => a.status === 'assigned' || a.status === 'in_progress' || a.status === 'on_hold'
-    );
-
-    if (activeList.length > 0) {
-      // Pick most recently assigned
-      activeAssignment = activeList.sort((a, b) => {
-        const timeA = a.assigned_at ? new Date(a.assigned_at).getTime() : 0;
-        const timeB = b.assigned_at ? new Date(b.assigned_at).getTime() : 0;
-        return timeB - timeA;
-      })[0];
-    } else {
-      // 2. Otherwise check for completed assignment awaiting verification
-      const completed = row.assignments.find((a) => a.status === 'completed');
-      if (completed) {
-        activeAssignment = completed;
-      }
-    }
-  }
-
-  return {
-    id: row.id,
-    trackingNumber: row.report_number || `RPT-${row.id.substring(0, 8)}`,
-    title: row.title || 'Untitled Report',
-    description: row.description || '',
-    category: row.categories?.name || 'General Maintenance',
-    categoryId: row.category_id,
-    location: {
-      building: row.locations?.building_name || 'Main Campus',
-      floor: row.locations?.floor || '1',
-      room: row.locations?.room || undefined,
-      specificArea: row.locations?.description || undefined,
-    },
-    locationId: row.location_id,
-    status: row.status || 'submitted',
-    priority: row.confirmed_priority ?? null,
-    isUrgentHazard: Boolean(row.is_urgent_hazard),
-    reporterName: row.reporter?.full_name || 'Campus Reporter',
-    reporterRole: row.reporter?.role || 'student_personnel',
-    reporterId: row.reporter_id || row.reporter?.id,
-    reporterEmail: row.reporter?.email,
-    assignedTechnician: activeAssignment?.technician?.full_name,
-    assignedTechnicianId: activeAssignment?.technician_id,
-    assignmentStatus: activeAssignment?.status,
-    createdAt: row.created_at || new Date().toISOString(),
-    updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
-  };
-}
-
-/**
- * Calculates Dashboard KPI statistics strictly from visible database records.
- * Ensures zero leakage of hidden reports across role perspectives.
- */
-export function calculateKpiStatsFromDbReports(
-  reports: Array<{
-    status: ReportStatus;
-    is_urgent_hazard: boolean;
-    confirmed_priority: PriorityLevel | null;
-    created_at?: string;
-    updated_at?: string;
-  }>
-): DashboardStats {
-  let totalActive = 0;
-  let pendingReview = 0;
-  let inProgress = 0;
-  let resolvedThisWeek = 0;
-  let urgentHazards = 0;
-
-  const oneWeekAgo = new Date();
-  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-  for (const report of reports) {
-    const isResolved = report.status === 'completed' || report.status === 'verified';
-    const isCancelled = report.status === 'cancelled';
-    const isActive = !isResolved && !isCancelled;
-
-    if (isActive) {
-      totalActive += 1;
-    }
-
-    if (report.status === 'submitted' || report.status === 'under_review') {
-      pendingReview += 1;
-    }
-
-    if (
-      report.status === 'assigned' ||
-      report.status === 'in_progress' ||
-      report.status === 'on_hold'
-    ) {
-      inProgress += 1;
-    }
-
-    if (isResolved) {
-      const timestamp = report.updated_at || report.created_at;
-      if (timestamp && new Date(timestamp) >= oneWeekAgo) {
-        resolvedThisWeek += 1;
-      }
-    }
-
-    if (report.is_urgent_hazard || report.confirmed_priority === 'critical') {
-      urgentHazards += 1;
-    }
-  }
-
-  return {
-    totalActive,
-    pendingReview,
-    inProgress,
-    resolvedThisWeek,
-    urgentHazards,
-  };
-}
-
-/**
- * Extracts campus facility breakdown counts strictly from visible reports.
- */
-export function getFacilityBreakdownFromReports(
-  reports: readonly MaintenanceReport[]
-): Array<{ building: string; count: number }> {
-  const countsByBuilding = new Map<string, number>();
-
-  for (const report of reports) {
-    const bldg = report.location?.building || 'Unspecified Facility';
-    countsByBuilding.set(bldg, (countsByBuilding.get(bldg) || 0) + 1);
-  }
-
-  return Array.from(countsByBuilding.entries()).map(([building, count]) => ({
-    building,
-    count,
-  }));
-}
-
-/**
  * Live Read Data Access Layer: Fetches paginated reports for queue and dashboard.
  *
  * Security & Authorization Guarantees:
@@ -263,6 +90,7 @@ export function getFacilityBreakdownFromReports(
  * - Additional role-aware filter applied for `student_personnel` (`reporter_id = auth.uid()`)
  *   for optimal database indexing and defense-in-depth.
  * - Fails closed on unauthenticated or inactive accounts.
+ * - Uses deterministic two-column ordering: `created_at DESC`, `id DESC`.
  */
 export async function getReportsQueue(
   params: ReportQueueParams = {}
@@ -304,9 +132,16 @@ export async function getReportsQueue(
       query = query.eq('status', params.status);
     }
 
-    // 3. Category filter
+    // 3. Category filter (Finding 1 fix: supports UUID direct filter or PostgREST inner join name filter)
     if (params.category && params.category !== 'all') {
-      query = query.eq('categories.name', params.category);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        params.category
+      );
+      if (isUuid) {
+        query = query.eq('category_id', params.category);
+      } else {
+        query = query.eq('categories.name', params.category);
+      }
     }
 
     // 4. Text search filter
@@ -319,9 +154,10 @@ export async function getReportsQueue(
       }
     }
 
-    // 5. Order & range pagination
+    // 5. Order & range pagination (Finding 3 fix: deterministic sort tiebreaker with id DESC)
     query = query
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .range(from, to);
 
     const { data, count, error } = await query;
@@ -336,7 +172,7 @@ export async function getReportsQueue(
         totalPages: 0,
         hasMore: false,
         isLiveData: true,
-        error: `Database query failed: ${error.message}`,
+        error: 'Unable to retrieve maintenance reports from the database. Please try again shortly.',
       };
     }
 
@@ -366,7 +202,7 @@ export async function getReportsQueue(
       totalPages: 0,
       hasMore: false,
       isLiveData: false,
-      error: message,
+      error: 'An unexpected system error occurred while loading reports.',
     };
   }
 }
@@ -379,6 +215,7 @@ export async function getReportsQueue(
  * - Never uses service-role credentials.
  * - Strictly aggregates only from rows permitted by PostgreSQL RLS.
  * - Fails closed with zero counts on errors or unauthenticated access.
+ * - Finding 2 fix: Explicitly verifies total count vs fetched records to prevent silent truncation.
  */
 export async function getDashboardKpiStats(): Promise<DashboardKpiResult> {
   const user = await getCurrentUserAndProfile();
@@ -402,13 +239,15 @@ export async function getDashboardKpiStats(): Promise<DashboardKpiResult> {
 
     let query = supabase
       .from('reports')
-      .select('id, status, is_urgent_hazard, confirmed_priority, created_at, updated_at');
+      .select('id, status, is_urgent_hazard, confirmed_priority, created_at, updated_at', {
+        count: 'exact',
+      });
 
     if (user.profile.role === 'student_personnel') {
       query = query.eq('reporter_id', user.id);
     }
 
-    const { data, error } = await query;
+    const { data, count, error } = await query;
 
     if (error) {
       console.error('[DAL] getDashboardKpiStats query error:', error.message);
@@ -421,12 +260,32 @@ export async function getDashboardKpiStats(): Promise<DashboardKpiResult> {
           urgentHazards: 0,
         },
         isLiveData: true,
-        error: `Database query failed: ${error.message}`,
+        error: 'Unable to calculate operational metrics from the database. Please try again shortly.',
+      };
+    }
+
+    const fetchedRows = data || [];
+
+    // Finding 2 fix: Truncation detection guard
+    if (isDatasetTruncated(count, fetchedRows.length)) {
+      console.error(
+        `[DAL] getDashboardKpiStats: Dataset truncated. Total matching records (${count}) exceeds fetched records (${fetchedRows.length}). Refusing to compute incomplete KPI metrics.`
+      );
+      return {
+        stats: {
+          totalActive: 0,
+          pendingReview: 0,
+          inProgress: 0,
+          resolvedThisWeek: 0,
+          urgentHazards: 0,
+        },
+        isLiveData: true,
+        error: `Operational metrics cannot be calculated accurately because total records (${count}) exceed the single-request query limit. Database aggregate function required.`,
       };
     }
 
     const stats = calculateKpiStatsFromDbReports(
-      (data || []) as Array<{
+      fetchedRows as Array<{
         status: ReportStatus;
         is_urgent_hazard: boolean;
         confirmed_priority: PriorityLevel | null;
@@ -451,7 +310,7 @@ export async function getDashboardKpiStats(): Promise<DashboardKpiResult> {
         urgentHazards: 0,
       },
       isLiveData: false,
-      error: message,
+      error: 'An unexpected system error occurred while calculating operational metrics.',
     };
   }
 }
