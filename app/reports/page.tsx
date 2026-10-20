@@ -1,49 +1,192 @@
+import React from 'react';
 import Link from 'next/link';
 import { requireAuth } from '@/utils/auth/server';
 import { AppShell } from '@/components/layout/app-shell';
-import { Card, CardContent } from '@/components/ui/card';
+import { ReportList } from '@/components/dashboard/report-list';
 import { Button } from '@/components/ui/button';
-import { ReportsIcon, ChevronRightIcon } from '@/components/ui/icons';
+import {
+  PlusCircleIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ExclamationTriangleIcon,
+} from '@/components/ui/icons';
+import { getReportsQueue } from '@/utils/reports/dal';
+import { formatRoleLabel } from '@/utils/auth/validation';
+import { ReportStatus } from '@/types/reports';
 
 export const instant = false;
 
-export default async function ReportsPage() {
+interface ReportsPageProps {
+  searchParams?: Promise<{
+    page?: string;
+    status?: string;
+    category?: string;
+    search?: string;
+  }>;
+}
+
+export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   const user = await requireAuth('/reports');
+  const role = user.profile.role;
+
+  // Resolve searchParams asynchronously for Next.js 16
+  const params = searchParams ? await searchParams : {};
+  const currentPage = params.page ? Math.max(1, parseInt(params.page, 10) || 1) : 1;
+  const statusFilter: ReportStatus | 'all' =
+    params.status && params.status !== 'all' ? (params.status as ReportStatus) : 'all';
+  const categoryFilter = params.category || 'all';
+  const searchQuery = params.search || '';
+
+  // Execute live read query through authenticated DAL
+  const queueResult = await getReportsQueue({
+    page: currentPage,
+    pageSize: 15,
+    status: statusFilter,
+    category: categoryFilter,
+    search: searchQuery,
+  });
+
+  const isStudent = role === 'student_personnel';
+  const isTechnician = role === 'technician';
+
+  const roleDescription = isStudent
+    ? 'View and track all maintenance requests and incident reports submitted by your account.'
+    : isTechnician
+    ? 'Maintenance service queue for assigned work orders and repair dispatches.'
+    : 'Campus-wide incident and maintenance report management queue.';
 
   return (
     <AppShell user={user} pageTitle="Maintenance Reports Queue">
-      <div className="max-w-3xl mx-auto py-8">
-        <Card className="text-center p-8 sm:p-12 border-dashed">
-          <CardContent className="flex flex-col items-center">
-            <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mb-4 shadow-xs">
-              <ReportsIcon size={32} className="w-8 h-8 shrink-0" />
-            </div>
-
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 mb-3">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />
-              Phase 2 Route Placeholder
-            </div>
-
-            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-              Reports Management Queue
-            </h2>
-
-            <p className="mt-2 text-sm text-slate-500 max-w-lg leading-relaxed">
-              This module will host the full lifecycle management table for Maintenance Coordinators, including priority confirmation, technician dispatch, status transitions, and verification sign-offs.
+      <div className="flex flex-col gap-6">
+        {/* Live Data Connection Banner with Active Role Perspective */}
+        <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm">
+          <div className="flex items-center gap-2.5 text-emerald-950">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse shrink-0" />
+            <p>
+              <strong className="font-semibold text-emerald-900">Live Backend Connected:</strong> Serving records from Supabase Cloud. PostgreSQL Row Level Security actively enforces your role scope.
             </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+              Perspective: {formatRoleLabel(role)}
+            </span>
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-white text-emerald-700 border border-emerald-200">
+              Live RLS Active
+            </span>
+          </div>
+        </div>
 
-            <div className="mt-6 flex flex-wrap gap-3 justify-center">
-              <Link href="/">
-                <Button variant="primary">Return to Operations Dashboard</Button>
+        {/* Database Query Warning / Notice if present */}
+        {queueResult.error && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2">
+            <ExclamationTriangleIcon size={16} className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Database Notice: {queueResult.error}</span>
+          </div>
+        )}
+
+        {/* Queue Header with Actions and Summary Counter */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Link
+                href="/"
+                className="text-xs font-medium text-slate-500 hover:text-indigo-600 transition-colors inline-flex items-center gap-1"
+              >
+                <ChevronLeftIcon size={14} className="w-3.5 h-3.5" />
+                <span>Dashboard</span>
               </Link>
-              <Link href="/reports/new">
-                <Button variant="outline" rightIcon={<ChevronRightIcon className="w-4 h-4" />}>
-                  Preview Report Submission
-                </Button>
-              </Link>
+              <span className="text-slate-300">/</span>
+              <span className="text-xs font-semibold text-slate-700">Reports Queue</span>
             </div>
-          </CardContent>
-        </Card>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              Maintenance Reports Queue
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">{roleDescription}</p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+              {queueResult.totalCount} {queueResult.totalCount === 1 ? 'Report' : 'Reports'} Registered
+            </div>
+
+            <Link href="/reports/new">
+              <Button variant="primary" leftIcon={<PlusCircleIcon className="w-4 h-4" />}>
+                Submit Report
+              </Button>
+            </Link>
+          </div>
+        </div>
+
+        {/* Main Reports Table */}
+        <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs p-4 sm:p-6">
+          <ReportList
+            reports={queueResult.reports}
+            userRole={role}
+            emptyTitle={
+              isStudent
+                ? 'No maintenance requests submitted yet'
+                : isTechnician
+                ? 'No work orders currently assigned to your queue'
+                : 'No reports currently match your queue filters'
+            }
+            emptyDescription={
+              isStudent
+                ? 'When you submit a maintenance issue or safety hazard, you will be able to monitor coordinator triage, technician dispatch, and verification progress here.'
+                : isTechnician
+                ? 'Newly dispatched campus maintenance assignments will appear in this work queue.'
+                : 'There are currently no maintenance reports matching your view scope in the live database.'
+            }
+          />
+
+          {/* Pagination Controls */}
+          {queueResult.totalPages > 1 && (
+            <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+              <p>
+                Showing {(queueResult.currentPage - 1) * queueResult.pageSize + 1} to{' '}
+                {Math.min(queueResult.currentPage * queueResult.pageSize, queueResult.totalCount)} of{' '}
+                {queueResult.totalCount} reports
+              </p>
+
+              <div className="flex items-center gap-2">
+                {queueResult.currentPage > 1 ? (
+                  <Link
+                    href={`/reports?page=${queueResult.currentPage - 1}${
+                      statusFilter !== 'all' ? `&status=${statusFilter}` : ''
+                    }`}
+                  >
+                    <Button variant="outline" size="sm" leftIcon={<ChevronLeftIcon className="w-3.5 h-3.5" />}>
+                      Previous
+                    </Button>
+                  </Link>
+                ) : (
+                  <Button variant="outline" size="sm" disabled leftIcon={<ChevronLeftIcon className="w-3.5 h-3.5" />}>
+                    Previous
+                  </Button>
+                )}
+
+                <span className="px-3 py-1 font-semibold text-slate-700 bg-slate-50 rounded-md border border-slate-200">
+                  Page {queueResult.currentPage} of {queueResult.totalPages}
+                </span>
+
+                {queueResult.hasMore ? (
+                  <Link
+                    href={`/reports?page=${queueResult.currentPage + 1}${
+                      statusFilter !== 'all' ? `&status=${statusFilter}` : ''
+                    }`}
+                  >
+                    <Button variant="outline" size="sm" rightIcon={<ChevronRightIcon className="w-3.5 h-3.5" />}>
+                      Next
+                    </Button>
+                  </Link>
+                ) : (
+                  <Button variant="outline" size="sm" disabled rightIcon={<ChevronRightIcon className="w-3.5 h-3.5" />}>
+                    Next
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </AppShell>
   );

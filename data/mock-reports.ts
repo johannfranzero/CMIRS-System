@@ -174,3 +174,10 @@ export const MOCK_STATS: DashboardStats = {
   resolvedThisWeek: 15,
   urgentHazards: 2,
 };
+
+export {
+  filterMockReportsForRole,
+  calculateRoleDashboardStats,
+  getRoleDashboardConfig,
+  getFacilityBreakdown,
+} from '@/utils/reports/mock-filter';

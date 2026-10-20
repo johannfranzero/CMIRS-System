@@ -559,4 +559,51 @@ Stage 2.4 is complete. All objectives for Frontend Phase 2 (Authentication & Rol
 
 Per the stop condition, work has halted. No subsequent phase or stage will begin without your explicit authorization.
 
+---
+
+## 15. Transition to Phase 2.5: Role-Aware Dashboard & Mock Data Isolation
+
+Following the conclusion of Stage 2.4, **Phase 2.5: Role-Aware Dashboard and Mock Data Isolation** was authorized and completed prior to introducing live report data.
+
+Key deliverables completed in Phase 2.5:
+1. **Canonical Role-Filtering Helper (`filterMockReportsForRole` in `utils/reports/mock-filter.ts`):** Filters reports per canonical institutional roles (`student_personnel` sees only own submissions; `technician` sees assigned non-declined work + own submissions; `coordinator`, `administrator`, and `management` see campus-wide reports; unauthenticated/inactive accounts fail closed).
+2. **Dashboard Data Isolation & Anti-Leakage:** KPI statistics cards (`calculateRoleDashboardStats`), facility breakdowns (`getFacilityBreakdown`), and greeting banners (`getRoleDashboardConfig`) derive strictly from visible reports, ensuring counts never leak hidden report quantities.
+3. **Mock Data Gap Strategy:** Phase 1 mock records lacked relational UUID foreign keys. Rather than fabricating synthetic user records or claiming false completion, safe multi-field matching (`reporterId`, `reporterEmail`, `reporterName`) and honest role-aware empty states ("Submit a Maintenance Report") were implemented.
+4. **Comprehensive Test Suite & Quality Gates:** Added 12 dedicated role-filtering unit tests in `tests/unit/role-mock-filtering.test.mjs` (total 40/40 tests passing across all suites). `npx tsc --noEmit`, `npm run lint`, and `npm run build` all pass with zero errors.
+
+For full technical specifications, architecture, and verification logs, see:  
+[`docs/frontend/PHASE_2_5_ROLE_AWARE_DASHBOARD_REPORT.md`](file:///d:/CMIRS-System/my-app/docs/frontend/PHASE_2_5_ROLE_AWARE_DASHBOARD_REPORT.md).
+
+---
+
+## 16. Planning Milestone: Phase 3.1 Live Backend Integration Readiness Audit
+
+Following Phase 2.5, **Phase 3.1 (Live Backend Integration Readiness Audit)** was initiated as a code review and architectural readiness phase prior to connecting live Supabase report queries.
+
+Key deliverables completed in Phase 3.1:
+1. **Database-to-UI Mapping:** Mapped dashboard KPI cards, queue columns, report details, locations, and analytics to actual PostgreSQL tables, columns, and foreign key joins.
+2. **Role Authorization Matrix:** Reconciled institutional permissions with deployed RLS policies in `20261018000005_table_rls_policies.sql` and security functions in `20261018000004_security_functions_and_rpc.sql`.
+3. **Data-Access Layer (DAL) Design:** Designed typed server-side data fetchers and Server Actions via `@supabase/ssr` with RLS as the primary enforcement boundary.
+4. **Type Transformation Specifications:** Cataloged discrepancies between prototype TypeScript models (`types/reports.ts`) and relational schema, addressing nullable `confirmed_priority`, UUIDs, and assignment histories.
+5. **Private Attachment Protocol:** Documented secure upload, signed URLs, active attachment limits (max 5 active per report), and coordinator soft-deletion via RPC `soft_delete_attachment`.
+6. **Risk Register & Testing Plan:** Cataloged 6 technical risks with mitigations and formulated unit test and Gate E.4D integration test plans.
+
+For the full audit report, see:  
+[`docs/frontend/PHASE_3_1_BACKEND_INTEGRATION_READINESS_REPORT.md`](file:///d:/CMIRS-System/my-app/docs/frontend/PHASE_3_1_BACKEND_INTEGRATION_READINESS_REPORT.md).
+
+---
+
+## 17. Milestone: Phase 3.2 Read-Only DAL Implementation and Live Dashboard Integration
+
+Following the readiness audit, **Phase 3.2 (Read-Only DAL Implementation and Live Dashboard Integration)** was authorized and completed.
+
+Key deliverables completed in Phase 3.2:
+1. **Typed Read-Only Data Access Layer (`utils/reports/dal.ts`):** Implemented `getReportsQueue(params)` and `getDashboardKpiStats()` querying live tables via authenticated user session clients. RLS function `can_view_report(id)` enforces security boundaries.
+2. **Dashboard Live Integration (`app/page.tsx`):** Replaced mock metrics with live queries. Derives KPI stats and recent reports strictly from visible database records. Added live database status banner and query notice handler.
+3. **Live Report Queue (`app/reports/page.tsx`):** Replaced placeholder card with a live management queue featuring server-side range pagination (`?page=N`), status and category filters, role-specific headers, and empty states.
+4. **Nullable Priority Resilience (`components/ui/badge.tsx`, `types/reports.ts`):** Gracefully handles unconfirmed reports where `confirmed_priority = NULL` as *"Pending Triage"*.
+5. **Quality Gates Passed:** Added 9 DAL unit tests in `tests/unit/dal-read-queries.test.mjs` (total 49/49 tests passing). `npx tsc --noEmit`, `npm run lint`, and `npm run build` all pass with zero errors.
+
+For full technical specifications and verification evidence, see:  
+[`docs/frontend/PHASE_3_2_READ_ONLY_DAL_REPORT.md`](file:///d:/CMIRS-System/my-app/docs/frontend/PHASE_3_2_READ_ONLY_DAL_REPORT.md).
 

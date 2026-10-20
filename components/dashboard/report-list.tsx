@@ -1,16 +1,27 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { MaintenanceReport } from '@/types/reports';
+import { UserRole } from '@/types/auth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { SearchIcon, FilterIcon, BuildingIcon, UserIcon } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/empty-state';
 
 interface ReportListProps {
   reports: MaintenanceReport[];
+  userRole?: UserRole;
+  emptyTitle?: string;
+  emptyDescription?: string;
 }
 
-export function ReportList({ reports }: ReportListProps) {
+export function ReportList({
+  reports,
+  userRole,
+  emptyTitle,
+  emptyDescription,
+}: ReportListProps) {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -70,6 +81,38 @@ export function ReportList({ reports }: ReportListProps) {
       return isoString;
     }
   };
+
+  if (reports.length === 0) {
+    const isStudent = userRole === 'student_personnel';
+    const isTech = userRole === 'technician';
+
+    const defaultTitle = isStudent
+      ? 'No maintenance reports submitted yet'
+      : isTech
+      ? 'No work orders currently assigned'
+      : 'No active reports in queue';
+
+    const defaultDescription = isStudent
+      ? "You haven't submitted any maintenance requests or incident reports. When you report an issue, you will be able to track its triage, priority confirmation, and repair progress here."
+      : isTech
+      ? 'Your maintenance service queue currently has no assigned work orders. Newly dispatched repair tasks will appear here.'
+      : 'There are currently no maintenance reports matching your view scope.';
+
+    return (
+      <EmptyState
+        title={emptyTitle || defaultTitle}
+        description={emptyDescription || defaultDescription}
+        actionLabel={isStudent ? 'Submit a Maintenance Report' : undefined}
+        onAction={
+          isStudent
+            ? () => {
+                router.push('/reports/new');
+              }
+            : undefined
+        }
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4 w-full">

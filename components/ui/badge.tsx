@@ -148,12 +148,12 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
 }
 
 interface PriorityBadgeProps {
-  priority: PriorityLevel;
+  priority: PriorityLevel | null | undefined;
   isUrgentHazard?: boolean;
 }
 
 export function PriorityBadge({ priority, isUrgentHazard = false }: PriorityBadgeProps) {
-  const priorityConfig = {
+  const priorityConfig: Record<PriorityLevel, { bg: string; label: string; dot: string }> = {
     critical: {
       bg: 'bg-red-50 text-red-800 border-red-200',
       label: 'Critical',
@@ -176,7 +176,28 @@ export function PriorityBadge({ priority, isUrgentHazard = false }: PriorityBadg
     },
   };
 
-  const config = priorityConfig[priority];
+  const config = priority ? priorityConfig[priority] : null;
+
+  if (!config) {
+    return (
+      <div className="inline-flex items-center gap-1.5 flex-wrap">
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold border bg-slate-50 text-slate-600 border-slate-200">
+          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+          <span>Pending Triage</span>
+        </span>
+
+        {isUrgentHazard && (
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-semibold bg-rose-100 text-rose-900 border border-rose-300"
+            title="Reporter flagged as urgent safety hazard"
+          >
+            <ExclamationTriangleIcon size={12} className="w-3 h-3 text-rose-700 shrink-0" />
+            <span>Urgent</span>
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="inline-flex items-center gap-1.5 flex-wrap">
