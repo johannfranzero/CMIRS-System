@@ -23,9 +23,6 @@ import {
   getPhilippineWeekBounds,
   isDateInPhilippineWeek,
   isDatasetTruncated,
-  type RawAnalyticsReport,
-  calculateOperationalAnalytics,
-  isAnalyticsDatasetComplete,
   buildReportsQueueUrl,
   sanitizeErrorMessage,
   FALLBACK_CATEGORIES,
@@ -33,6 +30,12 @@ import {
   FALLBACK_TECHNICIANS,
 } from './transform';
 import { createLocationsDirectoryResult } from '@/utils/locations/directory';
+import { getOperationalAnalyticsFromClient } from './analytics-runtime';
+
+export {
+  ANALYTICS_MAX_REPORT_ROWS,
+  SELECT_ANALYTICS_REPORTS_FIELDS,
+} from './analytics-runtime';
 
 // Re-export pure helpers for seamless application-wide consumption and testing
 export {
@@ -50,9 +53,6 @@ export {
   getPhilippineWeekBounds,
   isDateInPhilippineWeek,
   isDatasetTruncated,
-  type RawAnalyticsReport,
-  calculateOperationalAnalytics,
-  isAnalyticsDatasetComplete,
   buildReportsQueueUrl,
   sanitizeErrorMessage,
   FALLBACK_CATEGORIES,
@@ -103,28 +103,6 @@ export const SELECT_REPORTS_FIELDS = `
     technician_id,
     technician:profiles!technician_id (
       id,
-      full_name
-    )
-  )
-`;
-
-export const ANALYTICS_MAX_REPORT_ROWS = 1000;
-
-export const SELECT_ANALYTICS_REPORTS_FIELDS = `
-  id,
-  status,
-  confirmed_priority,
-  is_urgent_hazard,
-  categories (
-    name
-  ),
-  locations (
-    building_name
-  ),
-  assignments (
-    technician_id,
-    status,
-    technician:profiles!technician_id (
       full_name
     )
   )
@@ -383,41 +361,7 @@ export async function getOperationalAnalytics(): Promise<AnalyticsDataResult> {
 
   try {
     const supabase = await createClient();
-    const { data, count, error } = await supabase
-      .from('reports')
-      .select(SELECT_ANALYTICS_REPORTS_FIELDS, { count: 'exact' })
-      .order('id')
-      .range(0, ANALYTICS_MAX_REPORT_ROWS - 1);
-
-    if (error) {
-      return {
-        analytics: null,
-        state: 'error',
-        totalCount: null,
-        fetchedCount: 0,
-        error: 'Operational analytics are temporarily unavailable. Please try again shortly.',
-      };
-    }
-
-    const reports = (data ?? []) as unknown as RawAnalyticsReport[];
-
-    if (!isAnalyticsDatasetComplete(count, reports.length)) {
-      return {
-        analytics: null,
-        state: 'incomplete',
-        totalCount: count ?? null,
-        fetchedCount: reports.length,
-        error:
-          'Operational analytics cannot be shown because the complete RLS-visible report set was not retrieved.',
-      };
-    }
-
-    return {
-      analytics: calculateOperationalAnalytics(reports),
-      state: 'ready',
-      totalCount: count,
-      fetchedCount: reports.length,
-    };
+    return getOperationalAnalyticsFromClient(supabase);
   } catch {
     return {
       analytics: null,
