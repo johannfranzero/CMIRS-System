@@ -84,6 +84,38 @@ export interface DashboardKpiResult {
   error?: string;
 }
 
+export interface AnalyticsDistributionItem {
+  label: string;
+  count: number;
+}
+
+export interface TechnicianWorkloadItem {
+  technicianId: string;
+  technicianName: string;
+  activeAssignments: number;
+}
+
+export interface OperationalAnalytics {
+  totalReports: number;
+  urgentHazardReports: number;
+  activeAssignments: number;
+  statusDistribution: AnalyticsDistributionItem[];
+  priorityDistribution: AnalyticsDistributionItem[];
+  categoryDistribution: AnalyticsDistributionItem[];
+  locationDistribution: AnalyticsDistributionItem[];
+  technicianWorkload: TechnicianWorkloadItem[];
+}
+
+export type AnalyticsDataState = 'ready' | 'incomplete' | 'error';
+
+export interface AnalyticsDataResult {
+  analytics: OperationalAnalytics | null;
+  state: AnalyticsDataState;
+  totalCount: number | null;
+  fetchedCount: number;
+  error?: string;
+}
+
 export interface CategoryOption {
   id: string;
   name: string;
@@ -96,6 +128,11 @@ export interface LocationOption {
   floor?: string | null;
   room?: string | null;
   description?: string | null;
+}
+
+export interface LocationsDirectoryResult {
+  locations: LocationOption[];
+  error: string | null;
 }
 
 export interface TechnicianOption {
@@ -167,4 +204,3 @@ export interface DetailedReport extends MaintenanceReport {
   verifications: ReportVerificationItem[];
   attachments: ReportAttachmentItem[];
 }
-

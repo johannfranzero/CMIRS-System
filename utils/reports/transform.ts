@@ -13,6 +13,9 @@ import type {
   CategoryOption,
   LocationOption,
   TechnicianOption,
+  OperationalAnalytics,
+  AnalyticsDistributionItem,
+  TechnicianWorkloadItem,
 } from '../../types/reports';
 
 export const FALLBACK_CATEGORIES: CategoryOption[] = [
@@ -439,6 +442,129 @@ export function isDatasetTruncated(
 ): boolean {
   if (totalCount === null || totalCount === undefined) return false;
   return totalCount > fetchedCount;
+}
+
+export interface RawAnalyticsReport {
+  id: string;
+  status?: ReportStatus | null;
+  confirmed_priority?: PriorityLevel | null;
+  is_urgent_hazard?: boolean | null;
+  categories?: { name?: string | null } | Array<{ name?: string | null }> | null;
+  locations?: { building_name?: string | null } | Array<{ building_name?: string | null }> | null;
+  assignments?: Array<{
+    technician_id?: string | null;
+    status?: AssignmentStatus | null;
+    technician?: { full_name?: string | null } | Array<{ full_name?: string | null }> | null;
+  }> | null;
+}
+
+export const ACTIVE_ASSIGNMENT_STATUSES: readonly AssignmentStatus[] = [
+  'assigned',
+  'in_progress',
+  'on_hold',
+];
+
+function getRelationValue(
+  relation: { name?: string | null; building_name?: string | null; full_name?: string | null }
+    | Array<{ name?: string | null; building_name?: string | null; full_name?: string | null }>
+    | null
+    | undefined,
+  field: 'name' | 'building_name' | 'full_name'
+): string | null {
+  const value = Array.isArray(relation) ? relation[0]?.[field] : relation?.[field];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function createAnalyticsDistribution(labels: readonly string[]): AnalyticsDistributionItem[] {
+  const counts = new Map<string, number>();
+
+  for (const label of labels) {
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+
+  return Array.from(counts, ([label, count]) => ({ label, count })).sort(
+    (left, right) => right.count - left.count || left.label.localeCompare(right.label)
+  );
+}
+
+function formatStatusLabel(status: ReportStatus | null | undefined): string {
+  if (!status) return 'Unspecified status';
+  return status
+    .split('_')
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(' ');
+}
+
+function formatPriorityLabel(priority: PriorityLevel | null | undefined): string {
+  if (!priority) return 'Unconfirmed';
+  return `${priority.charAt(0).toUpperCase()}${priority.slice(1)}`;
+}
+
+export function isAnalyticsDatasetComplete(
+  totalCount: number | null | undefined,
+  fetchedCount: number
+): boolean {
+  return (
+    totalCount !== null &&
+    totalCount !== undefined &&
+    totalCount >= 0 &&
+    !isDatasetTruncated(totalCount, fetchedCount)
+  );
+}
+
+export function calculateOperationalAnalytics(
+  reports: readonly RawAnalyticsReport[]
+): OperationalAnalytics {
+  const statuses: string[] = [];
+  const priorities: string[] = [];
+  const categories: string[] = [];
+  const locations: string[] = [];
+  const workloads = new Map<string, TechnicianWorkloadItem>();
+  let urgentHazardReports = 0;
+  let activeAssignments = 0;
+
+  for (const report of reports) {
+    statuses.push(formatStatusLabel(report.status));
+    priorities.push(formatPriorityLabel(report.confirmed_priority));
+    categories.push(getRelationValue(report.categories, 'name') ?? 'Uncategorized');
+    locations.push(getRelationValue(report.locations, 'building_name') ?? 'Unspecified location');
+
+    if (report.is_urgent_hazard) {
+      urgentHazardReports += 1;
+    }
+
+    for (const assignment of report.assignments ?? []) {
+      if (!assignment.status || !ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)) {
+        continue;
+      }
+
+      activeAssignments += 1;
+      const technicianId = assignment.technician_id ?? 'unassigned';
+      const technicianName = getRelationValue(assignment.technician, 'full_name') ?? 'Unassigned technician';
+      const current = workloads.get(technicianId);
+
+      workloads.set(technicianId, {
+        technicianId,
+        technicianName,
+        activeAssignments: (current?.activeAssignments ?? 0) + 1,
+      });
+    }
+  }
+
+  return {
+    totalReports: reports.length,
+    urgentHazardReports,
+    activeAssignments,
+    statusDistribution: createAnalyticsDistribution(statuses),
+    priorityDistribution: createAnalyticsDistribution(priorities),
+    categoryDistribution: createAnalyticsDistribution(categories),
+    locationDistribution: createAnalyticsDistribution(locations),
+    technicianWorkload: Array.from(workloads.values()).sort(
+      (left, right) =>
+        right.activeAssignments - left.activeAssignments ||
+        left.technicianName.localeCompare(right.technicianName)
+    ),
+  };
 }
 
 /**

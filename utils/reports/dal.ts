@@ -6,8 +6,10 @@ import {
   DashboardKpiResult,
   PriorityLevel,
   ReportStatus,
+  AnalyticsDataResult,
   CategoryOption,
   LocationOption,
+  LocationsDirectoryResult,
   TechnicianOption,
   DetailedReport,
 } from '@/types/reports';
@@ -21,12 +23,16 @@ import {
   getPhilippineWeekBounds,
   isDateInPhilippineWeek,
   isDatasetTruncated,
+  type RawAnalyticsReport,
+  calculateOperationalAnalytics,
+  isAnalyticsDatasetComplete,
   buildReportsQueueUrl,
   sanitizeErrorMessage,
   FALLBACK_CATEGORIES,
   FALLBACK_LOCATIONS,
   FALLBACK_TECHNICIANS,
 } from './transform';
+import { createLocationsDirectoryResult } from '@/utils/locations/directory';
 
 // Re-export pure helpers for seamless application-wide consumption and testing
 export {
@@ -34,6 +40,7 @@ export {
   type RawDbReportDetailRow,
   type CategoryOption,
   type LocationOption,
+  type LocationsDirectoryResult,
   type TechnicianOption,
   type DetailedReport,
   transformDbReportToMaintenanceReport,
@@ -43,6 +50,9 @@ export {
   getPhilippineWeekBounds,
   isDateInPhilippineWeek,
   isDatasetTruncated,
+  type RawAnalyticsReport,
+  calculateOperationalAnalytics,
+  isAnalyticsDatasetComplete,
   buildReportsQueueUrl,
   sanitizeErrorMessage,
   FALLBACK_CATEGORIES,
@@ -93,6 +103,28 @@ export const SELECT_REPORTS_FIELDS = `
     technician_id,
     technician:profiles!technician_id (
       id,
+      full_name
+    )
+  )
+`;
+
+export const ANALYTICS_MAX_REPORT_ROWS = 1000;
+
+export const SELECT_ANALYTICS_REPORTS_FIELDS = `
+  id,
+  status,
+  confirmed_priority,
+  is_urgent_hazard,
+  categories (
+    name
+  ),
+  locations (
+    building_name
+  ),
+  assignments (
+    technician_id,
+    status,
+    technician:profiles!technician_id (
       full_name
     )
   )
@@ -333,6 +365,70 @@ export async function getDashboardKpiStats(): Promise<DashboardKpiResult> {
   }
 }
 
+export async function getOperationalAnalytics(): Promise<AnalyticsDataResult> {
+  const user = await getCurrentUserAndProfile();
+  const hasAnalyticsAccess =
+    user?.profile?.is_active &&
+    ['coordinator', 'administrator', 'management'].includes(user.profile.role);
+
+  if (!hasAnalyticsAccess) {
+    return {
+      analytics: null,
+      state: 'error',
+      totalCount: null,
+      fetchedCount: 0,
+      error: 'Operational analytics are unavailable for this session.',
+    };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { data, count, error } = await supabase
+      .from('reports')
+      .select(SELECT_ANALYTICS_REPORTS_FIELDS, { count: 'exact' })
+      .order('id')
+      .range(0, ANALYTICS_MAX_REPORT_ROWS - 1);
+
+    if (error) {
+      return {
+        analytics: null,
+        state: 'error',
+        totalCount: null,
+        fetchedCount: 0,
+        error: 'Operational analytics are temporarily unavailable. Please try again shortly.',
+      };
+    }
+
+    const reports = (data ?? []) as unknown as RawAnalyticsReport[];
+
+    if (!isAnalyticsDatasetComplete(count, reports.length)) {
+      return {
+        analytics: null,
+        state: 'incomplete',
+        totalCount: count ?? null,
+        fetchedCount: reports.length,
+        error:
+          'Operational analytics cannot be shown because the complete RLS-visible report set was not retrieved.',
+      };
+    }
+
+    return {
+      analytics: calculateOperationalAnalytics(reports),
+      state: 'ready',
+      totalCount: count,
+      fetchedCount: reports.length,
+    };
+  } catch {
+    return {
+      analytics: null,
+      state: 'error',
+      totalCount: null,
+      fetchedCount: 0,
+      error: 'Operational analytics are temporarily unavailable. Please try again shortly.',
+    };
+  }
+}
+
 // =============================================================================
 // Reference Data Catalog Loaders (Categories, Locations, Active Technicians)
 // =============================================================================
@@ -379,6 +475,29 @@ export async function getActiveLocations(): Promise<LocationOption[]> {
     return data;
   } catch {
     return FALLBACK_LOCATIONS;
+  }
+}
+
+export async function getLocationsDirectory(): Promise<LocationsDirectoryResult> {
+  const user = await getCurrentUserAndProfile();
+
+  if (!user || !user.profile?.is_active) {
+    return createLocationsDirectoryResult(null, new Error('Unauthenticated locations request'));
+  }
+
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from('locations')
+      .select('id, building_name, floor, room, description')
+      .eq('is_active', true)
+      .order('building_name')
+      .order('floor')
+      .order('room');
+
+    return createLocationsDirectoryResult(data, error);
+  } catch {
+    return createLocationsDirectoryResult(null, new Error('Locations directory retrieval failed'));
   }
 }
 
