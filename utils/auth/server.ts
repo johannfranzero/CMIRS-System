@@ -1,5 +1,6 @@
 import { cache } from 'react';
 import { redirect } from 'next/navigation';
+import { connection } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { AuthenticatedUser, UserProfile, UserRole } from '@/types/auth';
 import { isUserRole, sanitizeRedirectUrl } from '@/utils/auth/validation';
@@ -24,6 +25,7 @@ import { isUserRole, sanitizeRedirectUrl } from '@/utils/auth/validation';
 export const getCurrentUserAndProfile = cache(
   async (): Promise<AuthenticatedUser | null> => {
     try {
+      await connection();
       const supabase = await createClient();
 
       // 1. Authenticate session with Supabase Auth server
@@ -79,7 +81,13 @@ export async function requireAuth(nextPath?: string): Promise<AuthenticatedUser>
 
   if (!user) {
     const safeNext = nextPath ? sanitizeRedirectUrl(nextPath, '/') : null;
-    const loginTarget = safeNext ? `/login?next=${encodeURIComponent(safeNext)}` : '/login';
+    const isPublic =
+      safeNext === '/login' ||
+      safeNext?.startsWith('/login/') ||
+      safeNext === '/auth' ||
+      safeNext?.startsWith('/auth/');
+    const targetNext = isPublic ? null : safeNext;
+    const loginTarget = targetNext ? `/login?next=${encodeURIComponent(targetNext)}` : '/login';
     redirect(loginTarget);
   }
 

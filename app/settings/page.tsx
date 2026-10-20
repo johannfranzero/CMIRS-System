@@ -1,12 +1,17 @@
 import Link from 'next/link';
+import { requireRole } from '@/utils/auth/server';
 import { AppShell } from '@/components/layout/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SettingsIcon } from '@/components/ui/icons';
 
-export default function SettingsPage() {
+export const instant = false;
+
+export default async function SettingsPage() {
+  const user = await requireRole(['administrator'], '/settings');
+
   return (
-    <AppShell pageTitle="System Settings">
+    <AppShell user={user} pageTitle="System Settings">
       <div className="max-w-3xl mx-auto py-8">
         <Card className="text-center p-8 sm:p-12 border-dashed">
           <CardContent className="flex flex-col items-center">

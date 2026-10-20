@@ -4,13 +4,25 @@ import React from 'react';
 import Link from 'next/link';
 import { MenuIcon, BellIcon, PlusCircleIcon, CmirsLogo } from '@/components/ui/icons';
 import { Button } from '@/components/ui/button';
+import { AuthenticatedUser } from '@/types/auth';
+import { getInitials, getUserDisplayName, getUserRoleTitle } from '@/utils/auth/user';
+import { LogoutButton } from '@/components/auth/logout-button';
 
 interface HeaderProps {
   onOpenMobileMenu: () => void;
   title?: string;
+  user?: AuthenticatedUser | null;
 }
 
-export function Header({ onOpenMobileMenu, title = 'Campus Operations' }: HeaderProps) {
+export function Header({
+  onOpenMobileMenu,
+  title = 'Campus Operations',
+  user,
+}: HeaderProps) {
+  const initials = getInitials(user?.profile?.full_name, user?.email);
+  const displayName = getUserDisplayName(user?.profile, user?.email);
+  const roleTitle = getUserRoleTitle(user?.profile?.role);
+
   return (
     <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200/90 px-4 sm:px-6 flex items-center justify-between gap-4 shrink-0">
       {/* Left: Mobile hamburger & Logo / Title */}
@@ -38,9 +50,9 @@ export function Header({ onOpenMobileMenu, title = 'Campus Operations' }: Header
         </div>
       </div>
 
-      {/* Right: Quick Actions, Notifications, User Persona */}
+      {/* Right: Quick Actions, Notifications, Verified User Persona & Logout */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        {/* Quick Report CTA */}
+        {/* Quick Report CTA (All authenticated roles can submit reports) */}
         <Link href="/reports/new">
           <Button
             variant="primary"
@@ -56,8 +68,8 @@ export function Header({ onOpenMobileMenu, title = 'Campus Operations' }: Header
         <button
           type="button"
           className="relative p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-colors"
-          aria-label="View notifications (3 unread)"
-          title="3 unread notifications"
+          aria-label="View notifications"
+          title="Campus Notifications"
         >
           <BellIcon size={20} className="w-5 h-5 shrink-0" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" />
@@ -66,19 +78,28 @@ export function Header({ onOpenMobileMenu, title = 'Campus Operations' }: Header
         {/* Separator */}
         <div className="h-6 w-px bg-slate-200 hidden sm:block" />
 
-        {/* User Persona Profile Placeholder */}
+        {/* Verified User Persona Profile Display */}
         <div className="flex items-center gap-2.5 pl-1">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-            JM
+          <div
+            className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center font-bold text-xs shadow-2xs shrink-0"
+            title={`${displayName} (${roleTitle})`}
+          >
+            {initials}
           </div>
-          <div className="hidden md:flex flex-col text-left">
-            <span className="text-xs font-semibold text-slate-900 leading-tight">
-              Jordan Miller
+
+          <div className="hidden md:flex flex-col text-left max-w-[140px]">
+            <span className="text-xs font-semibold text-slate-900 leading-tight truncate" title={displayName}>
+              {displayName}
             </span>
-            <span className="text-[10px] font-medium text-indigo-700 bg-indigo-50 px-1 rounded w-fit">
-              Coordinator
+            <span className="text-[10px] font-medium text-indigo-700 bg-indigo-50 px-1 rounded w-fit truncate mt-0.5" title={roleTitle}>
+              {roleTitle}
             </span>
           </div>
+        </div>
+
+        {/* Header Logout Control */}
+        <div className="pl-1 border-l border-slate-200/80 hidden sm:block">
+          <LogoutButton variant="compact" showLabel={true} />
         </div>
       </div>
     </header>

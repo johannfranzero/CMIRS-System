@@ -9,20 +9,28 @@ import {
   ReportsIcon,
   PlusCircleIcon,
   LocationsIcon,
-  AnalyticsIcon,
-  SettingsIcon,
   CloseIcon,
   MenuIcon,
 } from '@/components/ui/icons';
+import { AuthenticatedUser } from '@/types/auth';
+import { getNavigationItemsForRole } from '@/config/navigation';
+import { getInitials, getUserDisplayName, getUserRoleTitle } from '@/utils/auth/user';
+import { LogoutButton } from '@/components/auth/logout-button';
 
 interface MobileNavProps {
   isOpen: boolean;
   onClose: () => void;
   onOpen: () => void;
+  user?: AuthenticatedUser | null;
 }
 
-export function MobileNav({ isOpen, onClose, onOpen }: MobileNavProps) {
+export function MobileNav({ isOpen, onClose, onOpen, user }: MobileNavProps) {
   const pathname = usePathname();
+
+  const navLinks = getNavigationItemsForRole(user?.profile?.role);
+  const initials = getInitials(user?.profile?.full_name, user?.email);
+  const displayName = getUserDisplayName(user?.profile, user?.email);
+  const roleTitle = getUserRoleTitle(user?.profile?.role);
 
   // Close drawer on path change
   useEffect(() => {
@@ -38,7 +46,6 @@ export function MobileNav({ isOpen, onClose, onOpen }: MobileNavProps) {
     };
     if (isOpen) {
       window.addEventListener('keydown', handleKeyDown);
-      // Prevent background scrolling while drawer is active
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -48,45 +55,6 @@ export function MobileNav({ isOpen, onClose, onOpen }: MobileNavProps) {
       document.body.style.overflow = '';
     };
   }, [isOpen, onClose]);
-
-  const navLinks = [
-    {
-      name: 'Dashboard',
-      href: '/',
-      icon: DashboardIcon,
-      isPlaceholder: false,
-    },
-    {
-      name: 'All Reports',
-      href: '/reports',
-      icon: ReportsIcon,
-      isPlaceholder: true,
-    },
-    {
-      name: 'Submit New Report',
-      href: '/reports/new',
-      icon: PlusCircleIcon,
-      isPlaceholder: true,
-    },
-    {
-      name: 'Campus Locations',
-      href: '/locations',
-      icon: LocationsIcon,
-      isPlaceholder: true,
-    },
-    {
-      name: 'Operations Analytics',
-      href: '/analytics',
-      icon: AnalyticsIcon,
-      isPlaceholder: true,
-    },
-    {
-      name: 'System Settings',
-      href: '/settings',
-      icon: SettingsIcon,
-      isPlaceholder: true,
-    },
-  ];
 
   return (
     <>
@@ -110,7 +78,7 @@ export function MobileNav({ isOpen, onClose, onOpen }: MobileNavProps) {
         <Link
           href="/reports"
           className={`flex flex-col items-center py-1 px-1.5 sm:px-2 rounded-lg text-[10px] sm:text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 ${
-            pathname.startsWith('/reports') && pathname !== '/reports/new'
+            pathname === '/reports'
               ? 'text-indigo-600 font-semibold'
               : 'text-slate-500 hover:text-slate-900'
           }`}
@@ -119,15 +87,16 @@ export function MobileNav({ isOpen, onClose, onOpen }: MobileNavProps) {
           <span>Reports</span>
         </Link>
 
+        {/* Elevated Quick Submit Action */}
         <Link
           href="/reports/new"
-          className="flex flex-col items-center -mt-4 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 rounded-full"
-          title="Submit Report"
+          className="flex flex-col items-center -mt-4 group focus-visible:outline-none"
+          aria-label="Submit new report"
         >
-          <div className="w-11 h-11 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md group-active:scale-95 transition-transform">
-            <PlusCircleIcon size={24} className="w-6 h-6 shrink-0" />
+          <div className="w-11 h-11 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md group-hover:bg-indigo-700 transition-transform group-active:scale-95 group-focus-visible:ring-2 group-focus-visible:ring-indigo-600 group-focus-visible:ring-offset-2">
+            <PlusCircleIcon size={22} className="w-5.5 h-5.5" />
           </div>
-          <span className="text-[10px] font-semibold text-indigo-700 mt-1">Submit</span>
+          <span className="text-[10px] font-medium text-slate-600 mt-0.5">Submit</span>
         </Link>
 
         <Link
@@ -142,11 +111,12 @@ export function MobileNav({ isOpen, onClose, onOpen }: MobileNavProps) {
           <span>Locations</span>
         </Link>
 
+        {/* More Menu Trigger (Drawer) */}
         <button
           type="button"
           onClick={onOpen}
           className="flex flex-col items-center py-1 px-1.5 sm:px-2 rounded-lg text-[10px] sm:text-[11px] font-medium text-slate-500 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
-          aria-label="Open more navigation options"
+          aria-label="Open full campus menu"
         >
           <MenuIcon size={20} className="w-5 h-5 mb-0.5 shrink-0" />
           <span>More</span>
@@ -163,7 +133,7 @@ export function MobileNav({ isOpen, onClose, onOpen }: MobileNavProps) {
         >
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-2xs transition-opacity"
             onClick={onClose}
             aria-hidden="true"
           />
@@ -190,7 +160,7 @@ export function MobileNav({ isOpen, onClose, onOpen }: MobileNavProps) {
               </button>
             </div>
 
-            {/* Nav list */}
+            {/* Role-Filtered Navigation Links */}
             <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden scrollbar-none">
               <p className="px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
                 Campus Navigation
@@ -233,19 +203,27 @@ export function MobileNav({ isOpen, onClose, onOpen }: MobileNavProps) {
               })}
             </nav>
 
-            {/* Profile footer in drawer */}
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center gap-3 shrink-0">
-              <div className="w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-                JM
+            {/* Verified Profile & Sign Out footer in drawer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col gap-3 shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs shrink-0"
+                  title={`${displayName} (${roleTitle})`}
+                >
+                  {initials}
+                </div>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="text-xs font-semibold text-slate-900 truncate" title={displayName}>
+                    {displayName}
+                  </span>
+                  <span className="text-[11px] text-indigo-700 font-medium truncate" title={roleTitle}>
+                    {roleTitle}
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-semibold text-slate-900 truncate">
-                  Jordan Miller
-                </span>
-                <span className="text-[11px] text-indigo-700 font-medium truncate">
-                  Maintenance Coordinator
-                </span>
-              </div>
+
+              {/* Dedicated drawer logout button */}
+              <LogoutButton variant="button" />
             </div>
           </div>
         </div>

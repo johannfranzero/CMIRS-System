@@ -81,7 +81,13 @@ export async function loginAction(
     }
 
     // 4. Determine sanitized destination URL
-    destinationUrl = sanitizeRedirectUrl(nextParam, '/');
+    const safeTarget = sanitizeRedirectUrl(nextParam, '/');
+    const isPublic =
+      safeTarget === '/login' ||
+      safeTarget.startsWith('/login/') ||
+      safeTarget === '/auth' ||
+      safeTarget.startsWith('/auth/');
+    destinationUrl = isPublic ? '/' : safeTarget;
   } catch (error) {
     console.error('Authentication server error:', error);
     return {

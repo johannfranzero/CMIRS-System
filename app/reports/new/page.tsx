@@ -5,11 +5,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PlusCircleIcon } from '@/components/ui/icons';
 
+export const instant = false;
+
 export default async function NewReportPage() {
-  await requireAuth('/reports/new');
+  const user = await requireAuth('/reports/new');
 
   return (
-    <AppShell pageTitle="Submit Maintenance Report">
+    <AppShell user={user} pageTitle="Submit Maintenance Report">
       <div className="max-w-3xl mx-auto py-8">
         <Card className="text-center p-8 sm:p-12 border-dashed">
           <CardContent className="flex flex-col items-center">

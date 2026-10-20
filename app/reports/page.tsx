@@ -5,11 +5,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ReportsIcon, ChevronRightIcon } from '@/components/ui/icons';
 
+export const instant = false;
+
 export default async function ReportsPage() {
-  await requireAuth('/reports');
+  const user = await requireAuth('/reports');
 
   return (
-    <AppShell pageTitle="Maintenance Reports Queue">
+    <AppShell user={user} pageTitle="Maintenance Reports Queue">
       <div className="max-w-3xl mx-auto py-8">
         <Card className="text-center p-8 sm:p-12 border-dashed">
           <CardContent className="flex flex-col items-center">

@@ -13,6 +13,8 @@ export const metadata: Metadata = {
   description: 'Access restricted by CMIRS Role-Based Access Control policy.',
 };
 
+export const instant = false;
+
 export default async function UnauthorizedPage() {
   const user = await getCurrentUserAndProfile();
 

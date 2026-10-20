@@ -85,9 +85,18 @@ export async function proxy(request: NextRequest) {
   if (user && isPublicRoute && pathname === '/login') {
     const nextParam = request.nextUrl.searchParams.get('next');
     const safeDestination = sanitizeRedirectUrl(nextParam, '/');
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = safeDestination;
-    redirectUrl.search = '';
+    const redirectUrl = new URL(safeDestination, request.nextUrl.origin);
+
+    // Prevent redirect loop: if safeDestination is a public auth route, default to '/'
+    if (
+      redirectUrl.pathname === '/login' ||
+      redirectUrl.pathname.startsWith('/login/') ||
+      redirectUrl.pathname === '/auth' ||
+      redirectUrl.pathname.startsWith('/auth/')
+    ) {
+      redirectUrl.pathname = '/';
+      redirectUrl.search = '';
+    }
 
     const redirectResponse = NextResponse.redirect(redirectUrl);
     supabaseResponse.cookies.getAll().forEach((cookie) => {

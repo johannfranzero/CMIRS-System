@@ -1,12 +1,17 @@
 import Link from 'next/link';
+import { requireRole } from '@/utils/auth/server';
 import { AppShell } from '@/components/layout/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AnalyticsIcon } from '@/components/ui/icons';
 
-export default function AnalyticsPage() {
+export const instant = false;
+
+export default async function AnalyticsPage() {
+  const user = await requireRole(['coordinator', 'administrator', 'management'], '/analytics');
+
   return (
-    <AppShell pageTitle="Operational Analytics & SLA Metrics">
+    <AppShell user={user} pageTitle="Operational Analytics & SLA Metrics">
       <div className="max-w-3xl mx-auto py-8">
         <Card className="text-center p-8 sm:p-12 border-dashed">
           <CardContent className="flex flex-col items-center">

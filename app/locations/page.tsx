@@ -5,11 +5,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LocationsIcon } from '@/components/ui/icons';
 
+export const instant = false;
+
 export default async function LocationsPage() {
-  await requireAuth('/locations');
+  const user = await requireAuth('/locations');
 
   return (
-    <AppShell pageTitle="Campus Locations & Facilities">
+    <AppShell user={user} pageTitle="Campus Locations & Facilities">
       <div className="max-w-3xl mx-auto py-8">
         <Card className="text-center p-8 sm:p-12 border-dashed">
           <CardContent className="flex flex-col items-center">

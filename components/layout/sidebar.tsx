@@ -5,68 +5,27 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   CmirsLogo,
-  DashboardIcon,
-  ReportsIcon,
-  PlusCircleIcon,
-  LocationsIcon,
-  AnalyticsIcon,
-  SettingsIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
 } from '@/components/ui/icons';
+import { AuthenticatedUser } from '@/types/auth';
+import { getNavigationItemsForRole } from '@/config/navigation';
+import { getInitials, getUserDisplayName, getUserRoleTitle } from '@/utils/auth/user';
+import { LogoutButton } from '@/components/auth/logout-button';
 
 interface SidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  user?: AuthenticatedUser | null;
 }
 
-export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ isCollapsed, onToggleCollapse, user }: SidebarProps) {
   const pathname = usePathname();
 
-  const navigationItems = [
-    {
-      name: 'Dashboard',
-      href: '/',
-      icon: DashboardIcon,
-      badge: 'Active',
-      isPlaceholder: false,
-    },
-    {
-      name: 'All Reports',
-      href: '/reports',
-      icon: ReportsIcon,
-      badge: 'Phase 2',
-      isPlaceholder: true,
-    },
-    {
-      name: 'Submit Report',
-      href: '/reports/new',
-      icon: PlusCircleIcon,
-      badge: 'Phase 2',
-      isPlaceholder: true,
-    },
-    {
-      name: 'Campus Locations',
-      href: '/locations',
-      icon: LocationsIcon,
-      badge: 'Phase 2',
-      isPlaceholder: true,
-    },
-    {
-      name: 'Operations Analytics',
-      href: '/analytics',
-      icon: AnalyticsIcon,
-      badge: 'Phase 2',
-      isPlaceholder: true,
-    },
-    {
-      name: 'Settings',
-      href: '/settings',
-      icon: SettingsIcon,
-      badge: 'Phase 2',
-      isPlaceholder: true,
-    },
-  ];
+  const navigationItems = getNavigationItemsForRole(user?.profile?.role);
+  const initials = getInitials(user?.profile?.full_name, user?.email);
+  const displayName = getUserDisplayName(user?.profile, user?.email);
+  const roleTitle = getUserRoleTitle(user?.profile?.role);
 
   return (
     <aside
@@ -84,7 +43,7 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
           }`}
           title="CMIRS - Campus Operations"
         >
-          <CmirsLogo className="w-8 h-8 shrink-0 shadow-xs rounded-lg" size={32} />
+          <CmirsLogo className="w-8 h-8 shrink-0 shadow-2xs rounded-lg" size={32} />
           {!isCollapsed && (
             <div className="flex flex-col min-w-0">
               <span className="text-base font-bold text-slate-900 tracking-tight leading-none">
@@ -98,7 +57,7 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
         </Link>
       </div>
 
-      {/* Navigation Links */}
+      {/* Role-Filtered Navigation Links */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden scrollbar-none">
         <div className="mb-2">
           {!isCollapsed && (
@@ -121,7 +80,7 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
                   ? 'bg-indigo-50 text-indigo-700 font-semibold'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               } ${isCollapsed ? 'justify-center px-2' : ''}`}
-              title={isCollapsed ? `${item.name} (${item.badge})` : undefined}
+              title={isCollapsed ? `${item.name} (${item.badge ?? ''})` : undefined}
             >
               <div className="w-5 h-5 shrink-0 flex items-center justify-center">
                 <Icon
@@ -156,41 +115,54 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
         })}
       </nav>
 
-      {/* Role & Persona Preview in Sidebar Footer */}
+      {/* Verified Role & Persona in Sidebar Footer with Logout Integration */}
       <div className="p-3 border-t border-slate-100 bg-slate-50/70 shrink-0">
         {!isCollapsed ? (
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-semibold text-xs shrink-0 shadow-xs">
-                JM
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <div
+                className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs"
+                title={`${displayName} (${roleTitle})`}
+              >
+                {initials}
               </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-semibold text-slate-800 truncate">
-                  Jordan Miller
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-xs font-semibold text-slate-800 truncate" title={displayName}>
+                  {displayName}
                 </span>
-                <span className="text-[10px] text-indigo-700 font-medium">
-                  Coordinator
+                <span className="text-[10px] text-indigo-700 font-medium truncate" title={roleTitle}>
+                  {roleTitle}
                 </span>
               </div>
             </div>
 
-            <button
-              onClick={onToggleCollapse}
-              className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors shrink-0"
-              title="Collapse sidebar"
-              aria-label="Collapse sidebar"
-            >
-              <ChevronLeftIcon size={16} className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-0.5 shrink-0">
+              {/* Logout button */}
+              <LogoutButton variant="icon" />
+
+              {/* Collapse toggle button */}
+              <button
+                onClick={onToggleCollapse}
+                className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors shrink-0"
+                title="Collapse sidebar"
+                aria-label="Collapse sidebar"
+              >
+                <ChevronLeftIcon size={16} className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2">
             <div
-              className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-semibold text-xs shadow-xs"
-              title="Jordan Miller (Coordinator)"
+              className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs cursor-default"
+              title={`${displayName} (${roleTitle})`}
             >
-              JM
+              {initials}
             </div>
+
+            {/* Logout button in collapsed mode */}
+            <LogoutButton variant="icon" />
+
             <button
               onClick={onToggleCollapse}
               className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"

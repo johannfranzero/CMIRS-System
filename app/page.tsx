@@ -18,11 +18,16 @@ import {
 } from '@/components/ui/icons';
 import { MOCK_REPORTS, MOCK_STATS } from '@/data/mock-reports';
 
+export const instant = false;
+
 export default async function DashboardPage() {
-  await requireAuth('/');
+  const user = await requireAuth('/');
+  const firstName = user.profile.full_name
+    ? user.profile.full_name.trim().split(/\s+/)[0]
+    : 'there';
 
   return (
-    <AppShell pageTitle="Operations Dashboard">
+    <AppShell user={user} pageTitle="Operations Dashboard">
       <div className="flex flex-col gap-6">
         {/* Mock Data Banner */}
         <div className="bg-indigo-50/80 border border-indigo-200/90 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm">
@@ -44,7 +49,7 @@ export default async function DashboardPage() {
               Campus Operations Dashboard
             </h2>
             <p className="text-sm text-slate-500 mt-1">
-              Welcome back, Jordan. 2 urgent safety hazards require coordinator review.
+              Welcome back, {firstName}. 2 urgent safety hazards require coordinator review.
             </p>
           </div>
 
