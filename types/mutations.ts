@@ -33,19 +33,6 @@ export interface ActionFormState<T = unknown> {
 }
 
 /**
- * Initial idle state passed to every React 19 `useActionState` hook.
- *
- * This value intentionally lives in a plain (non-`'use server'`) module.
- * Next.js requires every export of a `'use server'` file to be an async function;
- * exporting a plain constant from such a file causes the compiler to register it
- * as a remotely invocable server reference and to hand the raw object to
- * `useActionState` instead of an idle action state.
- */
-export const INITIAL_ACTION_STATE: ActionFormState<never> = {
-  status: 'idle',
-};
-
-/**
  * Payload submitted by a user to create a new maintenance or incident report.
  * Note: `reporter_id` is excluded; established strictly from server session `auth.uid()`.
  */

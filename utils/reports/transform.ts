@@ -10,8 +10,6 @@ import type {
   ReportWorkLogItem,
   ReportVerificationItem,
   ReportAttachmentItem,
-  LocationOption,
-  TechnicianOption,
   OperationalAnalytics,
   AnalyticsDistributionItem,
   TechnicianWorkloadItem,

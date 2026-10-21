@@ -52,7 +52,7 @@ const TEST_ACCOUNTS = [
     role: 'School Management',
     email: 'test-mgmt@cmirs.internal',
     badge: 'management',
-    desc: 'Read-only SLA metrics & oversight',
+    desc: 'Read-only operational analytics & oversight',
   },
 ];
 
