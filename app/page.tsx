@@ -224,54 +224,10 @@ export default async function DashboardPage() {
                       <UserIcon size={16} className="w-4 h-4 text-indigo-600 shrink-0" />
                       <span>Technicians On Duty</span>
                     </CardTitle>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   </div>
                 </CardHeader>
-                <CardContent className="divide-y divide-slate-100 p-0 text-xs">
-                  <div className="px-4 py-3 flex items-center justify-between hover:bg-slate-50/70 transition-colors">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[10px]">
-                        AM
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-800">Alex Morgan</p>
-                        <p className="text-slate-400">Plumbing & Electrical</p>
-                      </div>
-                    </div>
-                    <span className="text-[11px] font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
-                      2 tasks
-                    </span>
-                  </div>
-
-                  <div className="px-4 py-3 flex items-center justify-between hover:bg-slate-50/70 transition-colors">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[10px]">
-                        ER
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-800">Elena Rostova</p>
-                        <p className="text-slate-400">HVAC Specialist</p>
-                      </div>
-                    </div>
-                    <span className="text-[11px] font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
-                      1 task
-                    </span>
-                  </div>
-
-                  <div className="px-4 py-3 flex items-center justify-between hover:bg-slate-50/70 transition-colors">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[10px]">
-                        MB
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-800">Marco Bellini</p>
-                        <p className="text-slate-400">General Maintenance</p>
-                      </div>
-                    </div>
-                    <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
-                      Available
-                    </span>
-                  </div>
+                <CardContent className="p-4 text-xs text-slate-500 italic">
+                  Real-time technician availability is not yet implemented. View technician assignments on individual report detail pages.
                 </CardContent>
               </Card>
             ) : (
@@ -301,11 +257,8 @@ export default async function DashboardPage() {
                     <CheckCircleIcon size={16} className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span>Resolution SLA</span>
                   </div>
-                  <div className="mt-2 text-2xl font-bold">
-                    94.2% On-Time
-                  </div>
-                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    15 repairs successfully verified and closed out this week within policy SLA windows.
+                  <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                    Automated SLA tracking is not yet implemented. Resolution history is visible in the timeline on each report detail page.
                   </p>
                 </CardContent>
               </Card>
@@ -317,7 +270,7 @@ export default async function DashboardPage() {
                     <span>Report Lifecycle</span>
                   </div>
                   <p className="text-xs text-slate-300 mt-2 leading-relaxed">
-                    Submitted &rarr; Triage & Priority &rarr; Technician Assigned &rarr; Verification Sign-off.
+                    Submitted &rarr; Triage &amp; Priority &rarr; Technician Assigned &rarr; Verification Sign-off.
                   </p>
                 </CardContent>
               </Card>

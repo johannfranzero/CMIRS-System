@@ -80,7 +80,7 @@ export function ReportActionPanel({
   const [triagePriority, setTriagePriority] = useState<PriorityLevel>(
     report.priority || (report.isUrgentHazard ? 'critical' : 'medium')
   );
-  const [triageStatus, setTriageStatus] = useState<'under_review' | 'assigned'>('under_review');
+  // Triage always sets 'under_review'; technician assignment is a separate dedicated command.
   const [selectedTechId, setSelectedTechId] = useState<string>('');
   const [dispatchNotes, setDispatchNotes] = useState<string>('');
   const [declineReason, setDeclineReason] = useState<string>('');
@@ -343,21 +343,9 @@ export function ReportActionPanel({
                   </select>
                 </div>
 
-                <div>
-                  <label htmlFor="status" className="block text-xs font-semibold text-slate-800 mb-1">
-                    Next Lifecycle Status
-                  </label>
-                  <select
-                    id="status"
-                    name="status"
-                    value={triageStatus}
-                    onChange={(e) => setTriageStatus(e.target.value as 'under_review' | 'assigned')}
-                    disabled={triagePending}
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
-                  >
-                    <option value="under_review">Under Review (Keep in review queue)</option>
-                    <option value="assigned">Assigned (Ready for technician dispatch)</option>
-                  </select>
+                <div className="p-2.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[11px] text-indigo-900 leading-snug">
+                  Triage sets this report to <strong>Under Review</strong> and locks in the confirmed priority.
+                  Use the <em>Assign Tech</em> tab to dispatch a technician to this report.
                 </div>
 
                 <Button

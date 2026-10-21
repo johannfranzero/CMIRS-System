@@ -337,13 +337,14 @@ test('Report Triage: Validates confirmed priority level and triage status transi
   });
   assert.equal(triage1.success, true);
 
-  // Valid triage to assigned
+  // Assigned requires the dedicated assignment command
   const triage2 = validateReportTriageInput({
     reportId: VALID_UUID_1,
     confirmedPriority: 'critical',
     status: 'assigned',
   });
-  assert.equal(triage2.success, true);
+  assert.equal(triage2.success, false);
+  assert.ok(triage2.errors.status);
 
   // Invalid priority
   const badPriority = validateReportTriageInput({

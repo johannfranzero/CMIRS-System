@@ -242,7 +242,8 @@ export async function triageReportAction(
     rawInput = {
       reportId: payload.get('reportId')?.toString(),
       confirmedPriority: payload.get('confirmedPriority')?.toString(),
-      status: payload.get('status')?.toString(),
+      // Status is always 'under_review' for triage; assignment is a separate command.
+      status: 'under_review',
     };
   } else {
     rawInput = { ...payload };

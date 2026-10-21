@@ -311,8 +311,10 @@ export function validateReportTriageInput(input: unknown): ValidationResult<Repo
     errors.confirmedPriority = 'Confirmed priority must be low, medium, high, or critical.';
   }
 
-  if (raw.status !== 'under_review' && raw.status !== 'assigned') {
-    errors.status = 'Triage status must be under_review or assigned.';
+  // Triage moves the report to 'under_review' only.
+  // Technician assignment is a separate dedicated command (assignTechnicianToReport).
+  if (raw.status !== 'under_review') {
+    errors.status = 'Triage status must be under_review. Use the assignment command to dispatch a technician.';
   }
 
   if (Object.keys(errors).length > 0) {
@@ -324,7 +326,7 @@ export function validateReportTriageInput(input: unknown): ValidationResult<Repo
     data: {
       reportId: (raw.reportId as string).trim(),
       confirmedPriority: raw.confirmedPriority as PriorityLevel,
-      status: raw.status as 'under_review' | 'assigned',
+      status: 'under_review',
     },
   };
 }

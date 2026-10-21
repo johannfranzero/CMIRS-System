@@ -56,11 +56,13 @@ export interface CreatedReportResult {
 
 /**
  * Payload for Coordinator review and priority triage.
+ * Triage advances a report to 'under_review' only.
+ * Technician assignment is a separate dedicated command.
  */
 export interface ReportTriageInput {
   reportId: string;
   confirmedPriority: PriorityLevel;
-  status: 'under_review' | 'assigned';
+  status: 'under_review';
 }
 
 /**
