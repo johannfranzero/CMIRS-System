@@ -3,9 +3,6 @@ import assert from 'node:assert/strict';
 
 import {
   transformDbReportToDetailedReport,
-  FALLBACK_CATEGORIES,
-  FALLBACK_LOCATIONS,
-  FALLBACK_TECHNICIANS,
 } from '../../utils/reports/transform.ts';
 import {
   validateReportSubmissionInput,
@@ -285,7 +282,7 @@ test('Data Transformation: DetailedReport mapping, soft-deleted attachment filte
         technician_id: UUID_TECHNICIAN,
         status: 'in_progress',
         assigned_at: '2026-10-20T08:15:00Z',
-        technician: { id: UUID_TECHNICIAN, full_name: 'Alex Morgan', email: 'alex@campus.edu' },
+        technician: { id: UUID_TECHNICIAN, full_name: 'Rina Bautista', email: 'rina.bautista@campus.edu' },
         work_logs: [
           {
             id: 'w1',
@@ -356,7 +353,7 @@ test('Data Transformation: DetailedReport mapping, soft-deleted attachment filte
   assert.equal(detailed.title, 'Overhead conduit leak');
   assert.equal(detailed.isUrgentHazard, true);
   assert.equal(detailed.priority, 'critical');
-  assert.equal(detailed.assignedTechnician, 'Alex Morgan');
+  assert.equal(detailed.assignedTechnician, 'Rina Bautista');
 
   // 2. Work logs aggregated
   assert.equal(detailed.workLogs.length, 1);
@@ -378,20 +375,12 @@ test('Data Transformation: DetailedReport mapping, soft-deleted attachment filte
   assert.equal(detailed.attachments[0].fileName, 'leak_damage.jpg');
 });
 
-test('Reference Catalogs: Baseline catalogs and fallback fixtures integrity', () => {
-  // 1. Categories fallback contains canonical fixtures from seed.sql
-  assert.ok(FALLBACK_CATEGORIES.length >= 5);
-  const electrical = FALLBACK_CATEGORIES.find((c) => c.name.includes('Electrical'));
-  assert.ok(electrical);
-  assert.equal(electrical.id, 'c0000000-0000-4000-a000-000000000001');
-
-  // 2. Locations fallback contains campus fixtures
-  assert.ok(FALLBACK_LOCATIONS.length >= 5);
-  const mainAcad = FALLBACK_LOCATIONS.find((l) => l.building_name.includes('Main Academic Building'));
-  assert.ok(mainAcad);
-  assert.equal(mainAcad.floor, '1');
-
-  // 3. Technicians fallback contains mock technicians
-  assert.ok(FALLBACK_TECHNICIANS.length >= 2);
-  assert.ok(FALLBACK_TECHNICIANS.some((t) => t.full_name === 'Alex Morgan'));
+test('Phase 4D: Reference catalog fallback fixtures are removed from the runtime transform module', async () => {
+  // The FALLBACK_CATEGORIES / FALLBACK_LOCATIONS / FALLBACK_TECHNICIANS fixtures were removed in
+  // Phase 4D. The reference-catalog DAL functions now fail honestly instead of serving
+  // fabricated categories, locations, or technician identities to authenticated users.
+  const transformModule = await import('../../utils/reports/transform.ts');
+  assert.equal('FALLBACK_CATEGORIES' in transformModule, false);
+  assert.equal('FALLBACK_LOCATIONS' in transformModule, false);
+  assert.equal('FALLBACK_TECHNICIANS' in transformModule, false);
 });

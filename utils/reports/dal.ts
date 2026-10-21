@@ -1,5 +1,7 @@
 import { createClient } from '@/utils/supabase/server';
 import { getCurrentUserAndProfile } from '@/utils/auth/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { AuthenticatedUser } from '@/types/auth';
 import {
   ReportQueueParams,
   PaginatedReportsResult,
@@ -10,6 +12,8 @@ import {
   CategoryOption,
   LocationOption,
   LocationsDirectoryResult,
+  ReferenceCatalogResult,
+  FacilityBreakdownResult,
   TechnicianOption,
   DetailedReport,
 } from '@/types/reports';
@@ -25,12 +29,16 @@ import {
   isDatasetTruncated,
   buildReportsQueueUrl,
   sanitizeErrorMessage,
-  FALLBACK_CATEGORIES,
-  FALLBACK_LOCATIONS,
-  FALLBACK_TECHNICIANS,
+  describeDatabaseError,
 } from './transform';
 import { createLocationsDirectoryResult } from '@/utils/locations/directory';
 import { getOperationalAnalyticsFromClient } from './analytics-runtime';
+import {
+  getActiveCategoriesFromClient as getActiveCategoriesFromClientImpl,
+  getActiveLocationsFromClient as getActiveLocationsFromClientImpl,
+  getActiveTechniciansFromClient as getActiveTechniciansFromClientImpl,
+  getCampusFacilityBreakdownFromClient as getCampusFacilityBreakdownFromClientImpl,
+} from './reference-catalogs';
 
 export {
   ANALYTICS_MAX_REPORT_ROWS,
@@ -44,6 +52,8 @@ export {
   type CategoryOption,
   type LocationOption,
   type LocationsDirectoryResult,
+  type ReferenceCatalogResult,
+  type FacilityBreakdownResult,
   type TechnicianOption,
   type DetailedReport,
   transformDbReportToMaintenanceReport,
@@ -55,9 +65,7 @@ export {
   isDatasetTruncated,
   buildReportsQueueUrl,
   sanitizeErrorMessage,
-  FALLBACK_CATEGORIES,
-  FALLBACK_LOCATIONS,
-  FALLBACK_TECHNICIANS,
+  describeDatabaseError,
 };
 
 /**
@@ -380,46 +388,61 @@ export async function getOperationalAnalytics(): Promise<AnalyticsDataResult> {
 
 /**
  * Live Read DAL: Retrieves all active categories for report creation and filtering.
+ *
+ * Phase 4D: this function used to return a hardcoded `FALLBACK_CATEGORIES` fixture whenever the
+ * query failed or returned zero rows. That silently presented fabricated reference data to
+ * authenticated users and produced foreign-key insert failures downstream. It now fails
+ * honestly: an empty list plus a sanitized error message.
  */
-export async function getActiveCategories(): Promise<CategoryOption[]> {
+export async function getActiveCategories(): Promise<ReferenceCatalogResult<CategoryOption>> {
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
-      .from('categories')
-      .select('id, name, description')
-      .eq('is_active', true)
-      .order('name');
-
-    if (error || !data || data.length === 0) {
-      return FALLBACK_CATEGORIES;
-    }
-    return data;
-  } catch {
-    return FALLBACK_CATEGORIES;
+    return await getActiveCategoriesFromClient(supabase);
+  } catch (err) {
+    console.error('[DAL] getActiveCategories unexpected exception:', err);
+    return {
+      items: [],
+      error: 'The maintenance category list is temporarily unavailable. Please try again shortly.',
+    };
   }
 }
 
 /**
- * Live Read DAL: Retrieves all active campus locations for report creation.
+ * Client-injectable implementation of {@link getActiveCategories}.
+ * Exposed so the failure behaviour can be verified without a live database.
  */
-export async function getActiveLocations(): Promise<LocationOption[]> {
+export async function getActiveCategoriesFromClient(
+  client: SupabaseClient
+): Promise<ReferenceCatalogResult<CategoryOption>> {
+  return getActiveCategoriesFromClientImpl(client);
+}
+
+/**
+ * Live Read DAL: Retrieves all active campus locations for report creation.
+ *
+ * Phase 4D: previously returned a hardcoded `FALLBACK_LOCATIONS` fixture on failure. It now
+ * fails honestly with an empty list and a sanitized error message.
+ */
+export async function getActiveLocations(): Promise<ReferenceCatalogResult<LocationOption>> {
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
-      .from('locations')
-      .select('id, building_name, floor, room, description')
-      .eq('is_active', true)
-      .order('building_name')
-      .order('floor')
-      .order('room');
-
-    if (error || !data || data.length === 0) {
-      return FALLBACK_LOCATIONS;
-    }
-    return data;
-  } catch {
-    return FALLBACK_LOCATIONS;
+    return await getActiveLocationsFromClient(supabase);
+  } catch (err) {
+    console.error('[DAL] getActiveLocations unexpected exception:', err);
+    return {
+      items: [],
+      error: 'The campus location list is temporarily unavailable. Please try again shortly.',
+    };
   }
+}
+
+/**
+ * Client-injectable implementation of {@link getActiveLocations}.
+ */
+export async function getActiveLocationsFromClient(
+  client: SupabaseClient
+): Promise<ReferenceCatalogResult<LocationOption>> {
+  return getActiveLocationsFromClientImpl(client);
 }
 
 export async function getLocationsDirectory(): Promise<LocationsDirectoryResult> {
@@ -448,29 +471,77 @@ export async function getLocationsDirectory(): Promise<LocationsDirectoryResult>
 /**
  * Live Read DAL: Retrieves active technicians available for coordinator assignment.
  * Restricted to coordinator and administrator roles.
+ *
+ * Phase 4D: this function used to return a hardcoded `FALLBACK_TECHNICIANS` fixture (two
+ * non-existent technician accounts) whenever the query failed or returned zero rows, which
+ * offered coordinators assignable identities that do not exist in `public.profiles`. It now
+ * fails honestly with an empty list and a sanitized error message.
  */
-export async function getActiveTechnicians(): Promise<TechnicianOption[]> {
+export async function getActiveTechnicians(): Promise<ReferenceCatalogResult<TechnicianOption>> {
   const user = await getCurrentUserAndProfile();
   if (!user || !user.profile?.is_active || (user.profile.role !== 'coordinator' && user.profile.role !== 'administrator')) {
-    return [];
+    return { items: [], error: null };
   }
 
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, email')
-      .eq('role', 'technician')
-      .eq('is_active', true)
-      .order('full_name');
-
-    if (error || !data || data.length === 0) {
-      return FALLBACK_TECHNICIANS;
-    }
-    return data;
-  } catch {
-    return FALLBACK_TECHNICIANS;
+    return await getActiveTechniciansFromClient(supabase);
+  } catch (err) {
+    console.error('[DAL] getActiveTechnicians unexpected exception:', err);
+    return {
+      items: [],
+      error: 'The technician directory is temporarily unavailable. Please try again shortly.',
+    };
   }
+}
+
+/**
+ * Client-injectable implementation of {@link getActiveTechnicians}.
+ */
+export async function getActiveTechniciansFromClient(
+  client: SupabaseClient
+): Promise<ReferenceCatalogResult<TechnicianOption>> {
+  return getActiveTechniciansFromClientImpl(client);
+}
+
+/**
+ * Live Read DAL: Computes the campus facility (zone) breakdown from every RLS-visible report.
+ *
+ * Phase 4D: the dashboard previously derived this widget from the five most recent queue rows,
+ * so the displayed "Zones" count and per-building report counts described only that page of
+ * results. It now aggregates over the complete RLS-visible data set and refuses to publish
+ * partial numbers when the single-request row limit truncates the result.
+ */
+export async function getCampusFacilityBreakdown(): Promise<FacilityBreakdownResult> {
+  const user = await getCurrentUserAndProfile();
+
+  if (!user || !user.profile.is_active) {
+    return { breakdown: [], error: 'Unauthenticated or inactive user session.', isTruncated: false };
+  }
+
+  try {
+    const supabase = await createClient();
+    return await getCampusFacilityBreakdownFromClient(supabase, user);
+  } catch (err) {
+    console.error('[DAL] getCampusFacilityBreakdown unexpected exception:', err);
+    return {
+      breakdown: [],
+      error: 'The campus facility breakdown is temporarily unavailable. Please try again shortly.',
+      isTruncated: false,
+    };
+  }
+}
+
+/**
+ * Client-injectable implementation of {@link getCampusFacilityBreakdown}.
+ */
+export async function getCampusFacilityBreakdownFromClient(
+  client: SupabaseClient,
+  user: AuthenticatedUser
+): Promise<FacilityBreakdownResult> {
+  return getCampusFacilityBreakdownFromClientImpl(client, {
+    reporterId: user.profile.role === 'student_personnel' ? user.id : null,
+  });
 }
 
 // =============================================================================

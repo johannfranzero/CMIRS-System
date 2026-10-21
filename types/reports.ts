@@ -135,6 +135,24 @@ export interface LocationsDirectoryResult {
   error: string | null;
 }
 
+/**
+ * Phase 4D: reference catalogs (categories, locations, technicians) are loaded from the
+ * database or they are reported as unavailable. They are never replaced with demo fixtures.
+ */
+export interface ReferenceCatalogResult<T> {
+  items: T[];
+  error: string | null;
+}
+
+/**
+ * Phase 4D: campus facility breakdown computed from every RLS-visible active report.
+ */
+export interface FacilityBreakdownResult {
+  breakdown: Array<{ building: string; count: number }>;
+  error: string | null;
+  isTruncated: boolean;
+}
+
 export interface TechnicianOption {
   id: string;
   full_name: string;

@@ -9,8 +9,8 @@ import {
   transitionReportStatusAction,
   createWorkLogAction,
   verifyReportAction,
-  INITIAL_ACTION_STATE,
 } from '@/actions/reports';
+import { INITIAL_ACTION_STATE } from '@/utils/reports/action-state';
 import type {
   DetailedReport,
   TechnicianOption,
@@ -29,12 +29,14 @@ interface ReportActionPanelProps {
   report: DetailedReport;
   user: AuthenticatedUser;
   availableTechnicians?: TechnicianOption[];
+  technicianDirectoryError?: string | null;
 }
 
 export function ReportActionPanel({
   report,
   user,
   availableTechnicians = [],
+  technicianDirectoryError = null,
 }: ReportActionPanelProps) {
   const router = useRouter();
   const role = user.profile.role;
@@ -375,16 +377,31 @@ export function ReportActionPanel({
                   <label htmlFor="technicianId" className="block text-xs font-semibold text-slate-800 mb-1">
                     Select Technician <span className="text-rose-500">*</span>
                   </label>
+                  {technicianDirectoryError && (
+                    <div
+                      role="alert"
+                      className="mb-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-snug"
+                    >
+                      <strong className="font-semibold text-amber-950">Technician directory unavailable:</strong>{' '}
+                      {technicianDirectoryError} Assignment is disabled until the directory loads.
+                    </div>
+                  )}
                   <select
                     id="technicianId"
                     name="technicianId"
                     required
                     value={selectedTechId}
                     onChange={(e) => setSelectedTechId(e.target.value)}
-                    disabled={assignPending}
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    disabled={assignPending || Boolean(technicianDirectoryError)}
+                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 disabled:bg-slate-50 disabled:text-slate-400"
                   >
-                    <option value="">Choose an active technician...</option>
+                    <option value="">
+                      {technicianDirectoryError
+                        ? 'Technician directory unavailable...'
+                        : availableTechnicians.length === 0
+                          ? 'No active technicians are available for assignment.'
+                          : 'Choose an active technician...'}
+                    </option>
                     {availableTechnicians.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.full_name} ({t.email})
@@ -417,7 +434,7 @@ export function ReportActionPanel({
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={assignPending || !selectedTechId}
+                  disabled={assignPending || !selectedTechId || Boolean(technicianDirectoryError)}
                   className="w-full text-xs mt-1"
                 >
                   {assignPending ? 'Dispatching Technician...' : 'Dispatch Technician Work Order'}

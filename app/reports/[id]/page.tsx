@@ -30,10 +30,15 @@ export default async function ReportDetailPage({ params }: ReportDetailPageProps
   const detailResult = await getReportDetails(id);
   const report = detailResult.report;
 
-  // If coordinator or admin, load active technicians for assignment controls
+  // If coordinator or admin, load active technicians for assignment controls.
+  // Phase 4D: a failed technician-directory query now yields an empty list plus an honest
+  // error message instead of fabricated technician identities.
   let availableTechnicians: Array<{ id: string; full_name: string; email: string }> = [];
+  let technicianDirectoryError: string | null = null;
   if (user.profile.role === 'coordinator' || user.profile.role === 'administrator') {
-    availableTechnicians = await getActiveTechnicians();
+    const techniciansResult = await getActiveTechnicians();
+    availableTechnicians = techniciansResult.items;
+    technicianDirectoryError = techniciansResult.error;
   }
 
   // Handle report not found or access denied
@@ -229,6 +234,7 @@ export default async function ReportDetailPage({ params }: ReportDetailPageProps
               report={report}
               user={user}
               availableTechnicians={availableTechnicians}
+              technicianDirectoryError={technicianDirectoryError}
             />
 
             {/* 2. Reporter Profile Card */}

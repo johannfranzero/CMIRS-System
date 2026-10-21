@@ -10,7 +10,6 @@ import type {
   ReportWorkLogItem,
   ReportVerificationItem,
   ReportAttachmentItem,
-  CategoryOption,
   LocationOption,
   TechnicianOption,
   OperationalAnalytics,
@@ -18,27 +17,13 @@ import type {
   TechnicianWorkloadItem,
 } from '../../types/reports';
 
-export const FALLBACK_CATEGORIES: CategoryOption[] = [
-  { id: 'c0000000-0000-4000-a000-000000000001', name: 'Electrical & Lighting', description: 'Power outlets, lighting fixtures, circuit breakers, and switches' },
-  { id: 'c0000000-0000-4000-a000-000000000002', name: 'Plumbing & Water', description: 'Leaks, pipe blockages, faucets, toilets, and water supply issues' },
-  { id: 'c0000000-0000-4000-a000-000000000003', name: 'HVAC & Ventilation', description: 'Air conditioning, heating, ventilation fans, and temperature control' },
-  { id: 'c0000000-0000-4000-a000-000000000004', name: 'Structural & Carpentry', description: 'Doors, windows, locks, walls, ceiling tiles, and structural damage' },
-  { id: 'c0000000-0000-4000-a000-000000000005', name: 'General Maintenance', description: 'Furniture, painting, groundskeeping, and miscellaneous facility repairs' },
-];
-
-export const FALLBACK_LOCATIONS: LocationOption[] = [
-  { id: 'd0000000-0000-4000-b000-000000000001', building_name: 'Main Academic Building', floor: '1', room: '101', description: 'Main Lecture Hall' },
-  { id: 'd0000000-0000-4000-b000-000000000002', building_name: 'Main Academic Building', floor: '2', room: '204', description: 'Computer Laboratory' },
-  { id: 'd0000000-0000-4000-b000-000000000003', building_name: 'Administration Wing', floor: '1', room: '110', description: 'Administrative Office' },
-  { id: 'd0000000-0000-4000-b000-000000000004', building_name: 'University Library', floor: '1', room: 'Reading Area', description: 'Main Library Reading Room' },
-  { id: 'd0000000-0000-4000-b000-000000000005', building_name: 'Student Union Building', floor: 'Ground', room: 'Cafeteria', description: 'Dining and Kitchen Area' },
-];
-
-export const FALLBACK_TECHNICIANS: TechnicianOption[] = [
-  { id: 't0000000-0000-4000-c000-000000000001', full_name: 'Alex Morgan', email: 'alex.morgan@campus.edu' },
-  { id: 't0000000-0000-4000-c000-000000000002', full_name: 'Jordan Lee', email: 'jordan.lee@campus.edu' },
-];
-
+/**
+ * Phase 4D: the hardcoded `FALLBACK_CATEGORIES`, `FALLBACK_LOCATIONS` and `FALLBACK_TECHNICIANS`
+ * fixtures were removed from this module. They were previously returned by the reference-data
+ * DAL functions whenever a Supabase query failed or returned no rows, which silently served
+ * fabricated reference data (including two non-existent technician accounts) to authenticated
+ * users. The reference catalogs now fail honestly instead.
+ */
 
 /**
  * Raw joined record shape returned from Supabase PostgREST queries.
@@ -618,7 +603,63 @@ export function buildReportsQueueUrl(params: {
 }
 
 /**
+ * Maps a Supabase/PostgREST database error onto an accurate, non-revealing user-facing notice.
+ *
+ * Phase 4D: the previous implementation discarded every database error and always returned a
+ * single generic string, which made a genuine failure (for example a foreign-key violation on
+ * a category or location that was deactivated) indistinguishable from an outage. The mapping
+ * below is intentionally built from a fixed allow-list of messages: no SQL text, schema name,
+ * table name, column name, or constraint name is ever surfaced to the browser. The raw error is
+ * still written to the server log by the calling DAL function.
+ */
+export function describeDatabaseError(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+
+  const candidate = error as { code?: unknown; message?: unknown; details?: unknown };
+  const code = typeof candidate.code === 'string' ? candidate.code : '';
+  const message = typeof candidate.message === 'string' ? candidate.message.toLowerCase() : '';
+
+  // PostgreSQL integrity constraint violations
+  if (code === '23503') {
+    return 'The selected category or location is no longer available. Please reload the page and choose again.';
+  }
+  if (code === '23505') {
+    return 'A record with these details already exists. Please reload the page before retrying.';
+  }
+  if (code === '23502') {
+    return 'A required field could not be recorded by the database. Please try again.';
+  }
+  if (code === '23514') {
+    return 'The submitted details violate a campus maintenance data rule. Please review the form and try again.';
+  }
+
+  // Authorization / row level security
+  if (code === '42501') {
+    return 'You do not have permission to perform this action.';
+  }
+  if (code === 'PGRST301' || message.includes('jwt') || message.includes('token')) {
+    return 'Your session is no longer valid. Please sign in again and retry.';
+  }
+
+  // Missing row
+  if (code === 'PGRST116') {
+    return 'The requested record could not be found.';
+  }
+
+  // Connectivity / transport failures
+  if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ENOTFOUND') {
+    return 'The database service could not be reached. Please try again shortly.';
+  }
+
+  return null;
+}
+
+/**
  * Replaces internal technical database error messages with sanitized, user-friendly notices.
+ *
+ * Uses the accurate allow-listed classification above when the error is recognised, and
+ * otherwise falls back to the caller-provided generic notice. Raw database internals are
+ * never returned to the caller.
  */
 export function sanitizeErrorMessage(
   error: unknown,
@@ -626,5 +667,5 @@ export function sanitizeErrorMessage(
 ): string {
   if (!error) return fallbackMessage;
   // Never expose raw SQL errors, schema names, or table names to the UI
-  return fallbackMessage;
+  return describeDatabaseError(error) ?? fallbackMessage;
 }

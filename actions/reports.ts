@@ -61,11 +61,12 @@ import {
 } from '../utils/storage/server.ts';
 
 /**
- * Initial idle state contract for React 19 `useActionState` hooks.
+ * NOTE (Phase 4D): This module carries the file-level `'use server'` directive, so Next.js
+ * only permits exporting async functions from it. `INITIAL_ACTION_STATE` therefore lives in
+ * `utils/reports/action-state.ts`. Exporting it from here made the generated server-actions
+ * loader throw `A "use server" file can only export async functions, found object.` while the
+ * `/reports/new` route module was being evaluated, which made report submission impossible.
  */
-export const INITIAL_ACTION_STATE: ActionFormState<never> = {
-  status: 'idle',
-};
 
 /**
  * Resolves the authenticated user from injected context or via server session lookup.

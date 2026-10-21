@@ -9,8 +9,8 @@ import {
   transitionReportStatusAction,
   createWorkLogAction,
   verifyReportAction,
-  INITIAL_ACTION_STATE,
 } from '../../actions/reports.ts';
+import { INITIAL_ACTION_STATE } from '../../utils/reports/action-state.ts';
 
 // Valid UUID fixtures
 const UUID_CATEGORY = '11111111-1111-1111-1111-111111111111';
@@ -250,7 +250,9 @@ test('triageReportAction: Enforces coordinator role and updates confirmed priori
   const triagePayload = {
     reportId: UUID_REPORT,
     confirmedPriority: 'critical',
-    status: 'assigned',
+    // Phase 4D: triage advances the report to 'under_review' only. Technician assignment is a
+    // separate dedicated command (`assignTechnicianAction`).
+    status: 'under_review',
   };
 
   // 1. Student cannot triage
@@ -261,11 +263,24 @@ test('triageReportAction: Enforces coordinator role and updates confirmed priori
   assert.equal(studentRes.status, 'error');
   assert.match(studentRes.message, /Only Maintenance Coordinators/);
 
-  // 2. Coordinator triage succeeds
+  // 2. Triage rejects a client-supplied status other than 'under_review'
+  const invalidStatusRes = await triageReportAction(
+    INITIAL_ACTION_STATE,
+    { ...triagePayload, status: 'assigned' },
+    {
+      user: coordinatorUser,
+      supabase: createMockSupabase(),
+    }
+  );
+  assert.equal(invalidStatusRes.status, 'error');
+  assert.match(invalidStatusRes.message, /Invalid triage parameters/);
+  assert.ok(invalidStatusRes.fieldErrors?.status);
+
+  // 3. Coordinator triage succeeds
   const mockSupabase = createMockSupabase({
     reports: {
       single: () => ({
-        data: { id: UUID_REPORT, status: 'assigned', confirmed_priority: 'critical' },
+        data: { id: UUID_REPORT, status: 'under_review', confirmed_priority: 'critical' },
         error: null,
       }),
     },
@@ -276,7 +291,7 @@ test('triageReportAction: Enforces coordinator role and updates confirmed priori
     supabase: mockSupabase,
   });
   assert.equal(coordRes.status, 'success');
-  assert.equal(coordRes.data?.status, 'assigned');
+  assert.equal(coordRes.data?.status, 'under_review');
   assert.equal(coordRes.data?.confirmedPriority, 'critical');
 });
 

@@ -8,8 +8,10 @@ export const instant = false;
 export default async function NewReportPage() {
   const user = await requireAuth('/reports/new');
 
-  // Load active reference catalogs through authenticated DAL
-  const [categories, locations] = await Promise.all([
+  // Load active reference catalogs through authenticated DAL.
+  // Phase 4D: a failed catalog query now surfaces an honest unavailable state instead of
+  // silently substituting fabricated categories or locations.
+  const [categoriesResult, locationsResult] = await Promise.all([
     getActiveCategories(),
     getActiveLocations(),
   ]);
@@ -18,9 +20,11 @@ export default async function NewReportPage() {
     <AppShell user={user} pageTitle="Submit Maintenance Report">
       <div className="py-2">
         <ReportSubmissionForm
-          categories={categories}
-          locations={locations}
+          categories={categoriesResult.items}
+          locations={locationsResult.items}
           userRole={user.profile.role}
+          categoriesError={categoriesResult.error}
+          locationsError={locationsResult.error}
         />
       </div>
     </AppShell>

@@ -3,10 +3,10 @@
 import React, { useActionState, useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import {
-  INITIAL_ACTION_STATE,
   submitReportAction,
   uploadReportAttachmentAction,
 } from '@/actions/reports';
+import { INITIAL_ACTION_STATE } from '@/utils/reports/action-state';
 import type { CategoryOption, LocationOption } from '@/types/reports';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -23,6 +23,8 @@ interface ReportSubmissionFormProps {
   categories: CategoryOption[];
   locations: LocationOption[];
   userRole?: string;
+  categoriesError?: string | null;
+  locationsError?: string | null;
 }
 
 interface SelectedAttachment {
@@ -39,6 +41,8 @@ interface AttachmentUploadOutcome {
 export function ReportSubmissionForm({
   categories,
   locations,
+  categoriesError = null,
+  locationsError = null,
 }: ReportSubmissionFormProps) {
   const [state, formAction, isPending] = useActionState(
     submitReportAction,
@@ -59,11 +63,28 @@ export function ReportSubmissionForm({
   const [isUploadingAttachments, startAttachmentUpload] = useTransition();
   const uploadedForReportRef = useRef<string | null>(null);
 
+  // Single-flight guard: prevents a double click (or an impatient retry) from dispatching
+  // two Server Action invocations, which would create two separate report rows.
+  const submissionLockedRef = useRef(false);
+
+  // Tracks the report whose success screen the user dismissed via "Submit Another Report".
+  // Keyed by report id so a brand new submission always shows its own success screen.
+  const [dismissedReportId, setDismissedReportId] = useState<string | null>(null);
+
+  // Reference catalogs are mandatory for a valid submission. If either catalog failed to load
+  // from the database we must not let the user submit a report against a stale/empty list.
+  const referenceDataUnavailable = Boolean(categoriesError || locationsError);
+
   // Merge client usability errors with server-returned field errors
   const activeErrors: Record<string, string> = {
     ...clientErrors,
     ...(state.fieldErrors || {}),
   };
+
+  // Release the single-flight lock whenever the action produces a new state (success or error).
+  useEffect(() => {
+    submissionLockedRef.current = false;
+  }, [state]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setAttachmentError(null);
@@ -169,6 +190,14 @@ export function ReportSubmissionForm({
   const handleClientValidation = (e: React.FormEvent<HTMLFormElement>) => {
     const errors: Record<string, string> = {};
 
+    if (referenceDataUnavailable) {
+      e.preventDefault();
+      setClientErrors({
+        _form: 'Report submission is temporarily unavailable because the category or location reference data could not be loaded. Please reload the page and try again.',
+      });
+      return;
+    }
+
     if (!title.trim()) {
       errors.title = 'Report title is required.';
     } else if (title.trim().length < 5) {
@@ -199,6 +228,14 @@ export function ReportSubmissionForm({
       return;
     }
 
+    // Single-flight guard: a second click while the first request is still in flight must not
+    // dispatch a second Server Action call, otherwise two report rows would be created.
+    if (submissionLockedRef.current) {
+      e.preventDefault();
+      return;
+    }
+
+    submissionLockedRef.current = true;
     setClientErrors({});
   };
 
@@ -212,11 +249,13 @@ export function ReportSubmissionForm({
     setAttachmentError(null);
     setAttachmentOutcomes([]);
     uploadedForReportRef.current = null;
+    submissionLockedRef.current = false;
+    setDismissedReportId(state.data?.id ?? null);
     setClientErrors({});
   };
 
   // 1. Success State Feedback Screen
-  if (state.status === 'success' && state.data) {
+  if (state.status === 'success' && state.data && dismissedReportId !== state.data.id) {
     return (
       <Card className="max-w-2xl mx-auto border-emerald-200 bg-white shadow-sm">
         <CardContent className="p-8 sm:p-10 flex flex-col items-center text-center">
@@ -259,9 +298,15 @@ export function ReportSubmissionForm({
                 </ul>
               )}
               {!isUploadingAttachments && attachmentOutcomes.some((outcome) => outcome.status === 'error') && (
-                <Button type="button" variant="outline" size="sm" className="mt-3" onClick={retryFailedAttachments}>
-                  Retry Failed Photos
-                </Button>
+                <>
+                  <p className="mt-2 text-xs text-rose-700">
+                    Your report was created successfully. Only the photo upload failed — retrying uploads the
+                    remaining photos to this same report. No duplicate report is created.
+                  </p>
+                  <Button type="button" variant="outline" size="sm" className="mt-3" onClick={retryFailedAttachments}>
+                    Retry Failed Photos
+                  </Button>
+                </>
               )}
             </div>
           )}
@@ -322,6 +367,32 @@ export function ReportSubmissionForm({
               <p className="mt-0.5 text-xs text-rose-800 leading-relaxed">{state.message}</p>
             </div>
           </div>
+        )}
+
+        {/* Reference Data Unavailable Banner (honest failure state, never demo data) */}
+        {referenceDataUnavailable && (
+          <div
+            role="alert"
+            className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3 text-amber-900 text-sm"
+          >
+            <ExclamationTriangleIcon size={20} className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-amber-950">Submission Unavailable</p>
+              <p className="mt-0.5 text-xs text-amber-800 leading-relaxed">
+                {categoriesError && locationsError
+                  ? `The maintenance category and campus location lists could not be loaded from the database (${categoriesError} ${locationsError}). Report submission is disabled so that no invalid reference data is stored.`
+                  : categoriesError
+                    ? `The maintenance category list could not be loaded from the database (${categoriesError}). Report submission is disabled so that no invalid reference data is stored.`
+                    : `The campus location list could not be loaded from the database (${locationsError}). Report submission is disabled so that no invalid reference data is stored.`}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {activeErrors._form && (
+          <p className="mb-6 text-xs text-rose-600 font-medium" role="alert">
+            {activeErrors._form}
+          </p>
         )}
 
         <form action={formAction} onSubmit={handleClientValidation} className="flex flex-col gap-6">
@@ -584,7 +655,7 @@ export function ReportSubmissionForm({
             <Button
               type="submit"
               variant="primary"
-              disabled={isPending || isUploadingAttachments}
+              disabled={isPending || isUploadingAttachments || referenceDataUnavailable}
               className="w-full sm:w-auto min-w-[160px]"
             >
               {isPending ? (
@@ -592,6 +663,8 @@ export function ReportSubmissionForm({
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Submitting Report...
                 </span>
+              ) : referenceDataUnavailable ? (
+                'Submission Unavailable'
               ) : (
                 'Submit Maintenance Report'
               )}

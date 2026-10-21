@@ -19,9 +19,9 @@ import {
 import {
   getDashboardKpiStats,
   getReportsQueue,
-  getFacilityBreakdownFromReports,
+  getCampusFacilityBreakdown,
 } from '@/utils/reports/dal';
-import { getRoleDashboardConfig } from '@/utils/reports/mock-filter';
+import { getRoleDashboardConfig } from '@/utils/reports/dashboard-config';
 import { formatRoleLabel } from '@/utils/auth/validation';
 
 export const instant = false;
@@ -33,14 +33,15 @@ export default async function DashboardPage() {
     : 'there';
 
   const role = user.profile.role;
-  const [kpiResult, queueResult] = await Promise.all([
+  const [kpiResult, queueResult, facilityResult] = await Promise.all([
     getDashboardKpiStats(),
     getReportsQueue({ pageSize: 5 }),
+    getCampusFacilityBreakdown(),
   ]);
 
   const stats = kpiResult.stats;
   const liveReports = queueResult.reports;
-  const facilityBreakdown = getFacilityBreakdownFromReports(liveReports);
+  const facilityBreakdown = facilityResult.breakdown;
   const dashboardConfig = getRoleDashboardConfig(role, firstName, stats);
   const isOversightRole = role === 'coordinator' || role === 'administrator' || role === 'management';
   const isTechnician = role === 'technician';
@@ -84,10 +85,12 @@ export default async function DashboardPage() {
         )}
 
         {/* Database Query Warning / Notice if present (Sanitized) */}
-        {(kpiResult.error || queueResult.error) && (
+        {(kpiResult.error || queueResult.error || facilityResult.error) && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2">
             <ExclamationTriangleIcon size={16} className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Notice: {kpiResult.error || queueResult.error}</span>
+            <span>
+              Notice: {kpiResult.error || queueResult.error || facilityResult.error}
+            </span>
           </div>
         )}
 
@@ -187,12 +190,18 @@ export default async function DashboardPage() {
                     <span>{isStudent ? 'Reported Facilities' : 'Campus Facilities'}</span>
                   </CardTitle>
                   <span className="text-[11px] font-semibold text-slate-400">
-                    {facilityBreakdown.length} {facilityBreakdown.length === 1 ? 'Zone' : 'Zones'}
+                    {facilityResult.error
+                      ? 'Unavailable'
+                      : `${facilityBreakdown.length} ${facilityBreakdown.length === 1 ? 'Zone' : 'Zones'}`}
                   </span>
                 </div>
               </CardHeader>
               <CardContent className="divide-y divide-slate-100 p-0 text-xs">
-                {facilityBreakdown.length > 0 ? (
+                {facilityResult.error ? (
+                  <div className="p-4 text-center text-amber-700 text-xs">
+                    {facilityResult.error}
+                  </div>
+                ) : facilityBreakdown.length > 0 ? (
                   facilityBreakdown.map((facility) => (
                     <div
                       key={facility.building}

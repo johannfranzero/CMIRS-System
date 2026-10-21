@@ -261,7 +261,9 @@ test('Report Triage: Restricts triage to coordinator role and updates confirmed 
   const triagePayload = {
     reportId: UUID_REPORT,
     confirmedPriority: 'high',
-    status: 'assigned',
+    // Phase 4D: triage advances the report to 'under_review' only. Technician assignment is a
+    // separate dedicated command.
+    status: 'under_review',
   };
 
   // 1. Student attempted triage -> rejected
@@ -269,11 +271,20 @@ test('Report Triage: Restricts triage to coordinator role and updates confirmed 
   assert.equal(studentRes.success, false);
   assert.match(studentRes.error, /Only Maintenance Coordinators/);
 
-  // 2. Coordinator triage -> success
+  // 2. Triage rejects any status other than 'under_review'
+  const invalidStatusRes = await triageReportRecord(
+    { ...triagePayload, status: 'assigned' },
+    { user: coordinatorUser, supabase: createMockSupabase() }
+  );
+  assert.equal(invalidStatusRes.success, false);
+  assert.match(invalidStatusRes.error, /Invalid triage payload/);
+  assert.ok(invalidStatusRes.fieldErrors.status);
+
+  // 3. Coordinator triage -> success
   const mockSupabase = createMockSupabase({
     reports: {
       single: () => ({
-        data: { id: UUID_REPORT, status: 'assigned', confirmed_priority: 'high' },
+        data: { id: UUID_REPORT, status: 'under_review', confirmed_priority: 'high' },
         error: null,
       }),
     },
@@ -281,14 +292,14 @@ test('Report Triage: Restricts triage to coordinator role and updates confirmed 
 
   const coordRes = await triageReportRecord(triagePayload, { user: coordinatorUser, supabase: mockSupabase });
   assert.equal(coordRes.success, true);
-  assert.equal(coordRes.data.status, 'assigned');
+  assert.equal(coordRes.data.status, 'under_review');
   assert.equal(coordRes.data.confirmedPriority, 'high');
 
   const updateOp = mockSupabase.operations.find((op) => op.type === 'update');
   assert.ok(updateOp);
   assert.equal(updateOp.table, 'reports');
   assert.equal(updateOp.payload.confirmed_priority, 'high');
-  assert.equal(updateOp.payload.status, 'assigned');
+  assert.equal(updateOp.payload.status, 'under_review');
   assert.equal(updateOp.filters.id, UUID_REPORT);
 });
 
