@@ -2287,7 +2287,15 @@ const isDirectEntry =
   process.argv[1] !== undefined &&
   (process.argv[1].endsWith('rls-runner.ts') || process.argv[1].endsWith('rls-runner.js'));
 
-if (require.main === module || isDirectEntry) {
+// The CommonJS entry check is evaluated defensively: this module is loaded as an
+// ES module by Node's TypeScript loader, where `require` and `module` do not
+// exist and referencing them would raise a ReferenceError at import time.
+const isCommonJsEntry =
+  typeof require !== 'undefined' &&
+  typeof module !== 'undefined' &&
+  require.main === module;
+
+if (isCommonJsEntry || isDirectEntry) {
   main().catch((err) => {
     console.error('[UNHANDLED FATAL ERROR]:', err);
     process.exit(1);

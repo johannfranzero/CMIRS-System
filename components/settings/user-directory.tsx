@@ -5,10 +5,8 @@ import { useRouter } from 'next/navigation';
 import type { SettingsUserDirectoryEntry } from '@/types/settings';
 import { formatRoleLabel, USER_ROLES } from '@/types/auth';
 import { filterSettingsUsers } from '@/utils/settings/transform';
-import {
-  updateInstitutionalAccountAction,
-  INITIAL_ACCOUNT_MANAGEMENT_STATE,
-} from '@/actions/accounts';
+import { updateInstitutionalAccountAction } from '@/actions/accounts';
+import { INITIAL_ACCOUNT_MANAGEMENT_STATE } from '@/utils/settings/action-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';

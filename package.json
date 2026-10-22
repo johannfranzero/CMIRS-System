@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/unit/*.test.mjs",
+    "verify:bundle": "node scripts/verify-production-bundle.mjs",
+    "verify:prod": "npm run typecheck && npm run lint && npm run test && npm run build && npm run verify:bundle"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

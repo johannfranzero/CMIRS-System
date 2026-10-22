@@ -1,5 +1,5 @@
 /**
- * CMIRS — Phase 4D.1 Server Action Export Verification
+ * CMIRS — Server Action Export Verification
  *
  * Runs Next.js's OWN runtime guard (`ensureServerEntryExports`) against the real exports of
  * every file-level `'use server'` module in `actions/`. This is the exact function that threw
@@ -7,10 +7,19 @@
  *   A "use server" file can only export async functions, found object.
  *
  * while the `/reports/new` route module was being evaluated (see
- * `.next/dev/logs/next-development.log` in the Phase 4D evidence).
+ * `.next/dev/logs/next-development.log` in the Phase 4D evidence) and while the
+ * `/settings` and `/notifications` modules were being evaluated (Phase 4E / 4F).
+ *
+ * The modules are imported for real (through a resolve hook that maps the
+ * extensionless `next/*` subpaths onto their shipped entry points), so the
+ * verdict is produced by Next.js's own guard against the real module namespace
+ * — not by a source-code heuristic.
  *
  * Read-only: it imports the modules and calls the guard. It performs no I/O against any
  * database and issues no network request.
+ *
+ * Usage:
+ *   node --import ./scripts/register-next-subpath-hook.mjs scripts/verify-server-action-exports.mjs
  */
 
 import { createRequire } from 'node:module';
@@ -63,9 +72,13 @@ for (const file of actionFiles) {
   const nonFunctions = exportEntries.filter(([, value]) => typeof value !== 'function');
 
   // Run Next.js's real runtime guard against the real module exports.
+  // `ensureServerEntryExports` iterates an ARRAY of exported values, so the module
+  // namespace must be converted to an array of its values. Passing the namespace
+  // object itself makes `actions.length` undefined and the guard silently passes
+  // everything — which is why the exported constants went unnoticed.
   let guardOutcome = 'accepted';
   try {
-    ensureServerEntryExports(moduleExports);
+    ensureServerEntryExports(Object.values(moduleExports));
   } catch (err) {
     guardOutcome = String(err?.message ?? err).split('\n')[0];
   }

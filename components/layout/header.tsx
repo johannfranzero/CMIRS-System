@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { MenuIcon, BellIcon, PlusCircleIcon, CmirsLogo } from '@/components/ui/icons';
 import { Button } from '@/components/ui/button';
-import { AuthenticatedUser } from '@/types/auth';
+import { AuthenticatedUser, canSubmitReport } from '@/types/auth';
 import { getInitials, getUserDisplayName, getUserRoleTitle } from '@/utils/auth/user';
 import { LogoutButton } from '@/components/auth/logout-button';
 
@@ -17,6 +17,11 @@ interface HeaderProps {
    * server-side from that user's own unread rows. `null` means the count could not be read.
    */
   unreadNotificationCount?: number | null;
+  /**
+   * Whether the mobile navigation drawer is currently open. Used to expose the state of
+   * the hamburger control to assistive technology.
+   */
+  isMobileNavOpen?: boolean;
 }
 
 export function Header({
@@ -24,21 +29,29 @@ export function Header({
   title = 'Campus Operations',
   user,
   unreadNotificationCount = null,
+  isMobileNavOpen = false,
 }: HeaderProps) {
   const initials = getInitials(user?.profile?.full_name, user?.email);
   const displayName = getUserDisplayName(user?.profile, user?.email);
   const roleTitle = getUserRoleTitle(user?.profile?.role);
   // `null` means the unread count could not be read; no badge is rendered in that case.
   const unreadCount = unreadNotificationCount ?? 0;
+  // Phase 4H: only the reporter roles may file a maintenance report. The authorization is
+  // enforced on the server (the `submitReportAction` Server Action and the `/reports/new`
+  // route); the control is hidden for the other roles so the affordance is truthful.
+  const maySubmitReport = canSubmitReport(user?.profile?.role);
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200/90 px-4 sm:px-6 flex items-center justify-between gap-4 shrink-0">
       {/* Left: Mobile hamburger & Logo / Title */}
       <div className="flex items-center gap-3 min-w-0">
         <button
+          type="button"
           onClick={onOpenMobileMenu}
-          className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-colors shrink-0"
+          className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 transition-colors shrink-0"
           aria-label="Open navigation menu"
+          aria-expanded={isMobileNavOpen}
+          aria-controls="cmirs-mobile-nav-drawer"
         >
           <MenuIcon size={20} className="w-5 h-5 shrink-0" />
         </button>
@@ -60,17 +73,23 @@ export function Header({
 
       {/* Right: Quick Actions, Notifications, Verified User Persona & Logout */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        {/* Quick Report CTA (All authenticated roles can submit reports) */}
-        <Link href="/reports/new">
-          <Button
-            variant="primary"
-            size="sm"
-            leftIcon={<PlusCircleIcon size={16} className="w-4 h-4 shrink-0" />}
-            className="hidden sm:inline-flex"
-          >
-            New Report
-          </Button>
-        </Link>
+        {/* Quick Report CTA.
+            Phase 4H: only the reporter roles may file a maintenance report. The authorization
+            is enforced on the server (the `submitReportAction` Server Action and the
+            `/reports/new` route); the control is hidden for the other roles so the
+            affordance is truthful. */}
+        {maySubmitReport && (
+          <Link href="/reports/new">
+            <Button
+              variant="primary"
+              size="sm"
+              leftIcon={<PlusCircleIcon size={16} className="w-4 h-4 shrink-0" />}
+              className="hidden sm:inline-flex"
+            >
+              New Report
+            </Button>
+          </Link>
+        )}
 
         {/* Notifications control.
             Phase 4D.1 removed the decorative red "unread" dot because it implied a live

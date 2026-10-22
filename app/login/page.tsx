@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { CmirsLogo } from '@/components/ui/icons';
 import { Card, CardContent } from '@/components/ui/card';
 import { LoginForm } from '@/components/auth/login-form';
+import { getTestPersonas } from '@/utils/auth/test-personas.server';
 
 export const metadata: Metadata = {
   title: 'Sign In — CMIRS',
@@ -22,7 +23,12 @@ async function LoginParamsResolver({ searchParams }: LoginPageProps) {
   const nextParam = resolvedParams.next;
   const nextUrl = Array.isArray(nextParam) ? nextParam[0] : nextParam;
 
-  return <LoginForm initialReason={reason} nextUrl={nextUrl} />;
+  // Development-only QA persona catalogue. `getTestPersonas()` returns an empty
+  // list outside `next dev` (see utils/auth/dev-tools.ts), so a production build
+  // never renders the quick-fill panel and never exposes a test e-mail address.
+  const testPersonas = getTestPersonas();
+
+  return <LoginForm initialReason={reason} nextUrl={nextUrl} testPersonas={testPersonas} />;
 }
 
 export default function LoginPage({ searchParams }: LoginPageProps) {

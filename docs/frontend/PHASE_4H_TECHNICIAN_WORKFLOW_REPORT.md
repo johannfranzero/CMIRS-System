@@ -229,3 +229,44 @@ unchanged by them.
 | 3 | **The signed-in UI was not walked through in a browser.** The route and console checks pass (0 errors, 0 exceptions), but the panels themselves were never rendered with a session. | Manual pass with the two test accounts. |
 | 4 | **The four technician-submitted reports** (RPT-000008, 000009, 000044, 000045) pre-date the restriction. RPT-000045 is now assigned; the other three remain `submitted`. | Optionally close or cancel them as the coordinator. They were left untouched. |
 | 5 | **The working tree is uncommitted** — the branch is 3 commits ahead of `origin/main`; nothing was committed or pushed. | Review, commit, push. This phase was instructed not to commit, push or deploy. |
+
+---
+
+## 8. Addendum — "Encountered two children with the same key" (application shell)
+
+**Reported:** a console error on every authenticated page:
+`Encountered two children with the same key, '/reports/new'` — `components/layout/sidebar.tsx:75`.
+
+**Root cause.** The navigation is rendered with a key derived from the destination
+(`key={item.href}`). When the Phase 4E/4F work replaced the "All Reports" entry
+(`/reports`) with a second "Report Issue" entry pointing at `/reports/new`, the navigation
+ended up with **two entries for the same destination**:
+
+```
+name: 'Report Issue',   href: '/reports/new'
+name: 'Submit Report',  href: '/reports/new'
+```
+
+React therefore rendered two children with the same key in the sidebar **and** in the mobile
+drawer, which React reports as an error and which can make links be duplicated or dropped.
+
+**Fix (three parts).**
+
+| Part | Change |
+| --- | --- |
+| Data | The duplicate entry was removed. The navigation is back to one entry per destination — `Dashboard`, **All Reports** (`/reports`), **Submit Report** (`/reports/new`, restricted to the reporter roles), `Notifications`, `Campus Locations`, `Operations Analytics`, `Settings`. The `/reports` queue stays reachable from the navigation, which it had lost in the earlier work. |
+| Keys | Both renderers now key by `href` **and** label — `key={`${item.href}-${item.name}`}` — so a future duplicate destination degrades gracefully instead of producing an error. |
+| Guard | `config/navigation.ts` asserts the invariant in development: a duplicate destination logs a clear `[CMIRS] Duplicate navigation destination "…"` error naming the entry, instead of surfacing as an anonymous React warning. |
+
+**Verification.** Two new regression tests in `tests/unit/phase-4h-technician-workflow.test.mjs`:
+
+1. *the navigation has no duplicate destinations* — parses the configuration and asserts every `href` is distinct.
+2. *rendering the navigation produces no duplicate React key warning* — rebuilds the entries and renders them through `react-dom/server` with the sidebar's key expression, capturing `console.error` and asserting that no "same key" warning is produced.
+
+Both tests were **proven to fail** when the duplicate entry is temporarily restored
+(3 failures, including the React-level one) and pass with the fix in place.
+
+**Final state:** `tsc` **0 errors** · `eslint` **0 errors / 0 warnings** · `next build` **succeeds**
+· **223 unit tests, 223 pass, 0 fail** · headless Chrome reports **0 console errors and 0 page
+exceptions** on every route.
+

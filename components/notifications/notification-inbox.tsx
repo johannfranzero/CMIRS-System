@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation';
 import {
   markAllNotificationsReadAction,
   markNotificationReadAction,
-  INITIAL_NOTIFICATION_ACTION_STATE,
 } from '@/actions/notifications';
+import { INITIAL_NOTIFICATION_ACTION_STATE } from '@/utils/notifications/action-state';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BellIcon, CheckCircleIcon, ClockIcon } from '@/components/ui/icons';

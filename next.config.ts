@@ -1,7 +1,91 @@
 import type { NextConfig } from "next";
 
+/**
+ * CMIRS — Production Security Headers
+ *
+ * The application is deployed behind TLS and serves authenticated, role-gated pages.
+ * Without an explicit policy the browser applies no transport, framing or content-type
+ * protections of its own. The headers below are applied to every response, including the
+ * static asset routes that the proxy matcher does not cover.
+ *
+ * `Content-Security-Policy` is deliberately restrictive for everything the application
+ * does not need, while still permitting the Next.js hydration bootstrap (which is an
+ * inline script) and the Supabase REST/Storage/Auth origins the client talks to.
+ *
+ * NOTE FOR THE OWNER: a nonce-based CSP (`script-src 'nonce-…'`) is stronger than the
+ * `'unsafe-inline'` allowance used here, because it removes the need for
+ * `'unsafe-inline'`. It requires the proxy to mint a nonce per request and to attach it
+ * to the request headers so the Next.js renderer can echo it onto its bootstrap scripts.
+ * That is recorded as an open item in `docs/PRODUCTION_READINESS_AUDIT.md`.
+ */
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+let supabaseOrigin = "";
+let supabaseWsOrigin = "";
+
+if (supabaseUrl) {
+  try {
+    const parsed = new URL(supabaseUrl);
+    supabaseOrigin = parsed.origin;
+    supabaseWsOrigin = `${parsed.protocol === "http:" ? "ws:" : "wss:"}//${parsed.host}`;
+  } catch {
+    // An unparsable URL leaves the origins empty; the CSP then restricts connections to
+    // the application origin only, which fails closed rather than open.
+    supabaseOrigin = "";
+    supabaseWsOrigin = "";
+  }
+}
+
+const connectSources = ["'self'", supabaseOrigin, supabaseWsOrigin]
+  .filter((value) => value.length > 0)
+  .join(" ");
+
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  `connect-src ${connectSources}`,
+  `img-src 'self' blob: data: ${supabaseOrigin}`.trim(),
+  "font-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  // Next.js emits an inline bootstrap script for hydration. `'unsafe-inline'` is required
+  // until the nonce-based policy described above is implemented.
+  "script-src 'self' 'unsafe-inline'",
+  "object-src 'none'",
+  "media-src 'self' blob:",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+].join("; ");
+
+const securityHeaders = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "X-DNS-Prefetch-Control", value: "off" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+  },
+  {
+    key: "Strict-Transport-Security",
+    value: "max-age=63072000; includeSubDomains",
+  },
+  { key: "Content-Security-Policy", value: contentSecurityPolicy },
+];
+
 const nextConfig: NextConfig = {
   /* config options here */
+  // Do not advertise the framework in the response headers.
+  poweredByHeader: false,
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders,
+      },
+    ];
+  },
   experimental: {
     agentFeedback: true,
     serverActions: {

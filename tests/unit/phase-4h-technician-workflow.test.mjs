@@ -174,17 +174,21 @@ test('Phase 4H: the Server Action accepts a submission from a reporter role', as
 test('Phase 4H: the submit entry points are hidden from the roles that may not report', () => {
   const navigation = readFileSync(path.join(appRoot, 'config', 'navigation.ts'), 'utf8');
 
+  // Exactly ONE navigation entry may point at the submission form: two entries sharing the
+  // destination produced a duplicate React key and crashed the application shell.
   const submitEntries = [
     ...navigation.matchAll(/href: '\/reports\/new'[\s\S]{0,240}?allowedRoles: ([^,\n]+),/g),
   ];
-  assert.ok(submitEntries.length >= 2, 'Both submission navigation entries must be role restricted');
-  for (const entry of submitEntries) {
-    assert.match(
-      entry[1],
-      /REPORT_SUBMITTER_ROLES/,
-      'A submission navigation entry must be restricted to the reporter roles'
-    );
-  }
+  assert.equal(
+    submitEntries.length,
+    1,
+    'Exactly one navigation entry may point at the submission form'
+  );
+  assert.match(
+    submitEntries[0][1],
+    /REPORT_SUBMITTER_ROLES/,
+    'The submission navigation entry must be restricted to the reporter roles'
+  );
 
   // The report queue must remain reachable from the navigation.
   assert.match(navigation, /name: 'All Reports'/, 'The report queue must stay in the navigation');
@@ -445,6 +449,75 @@ test('Phase 4H: the prepared RLS migration restricts submission to the reporter 
   // It must not touch anything else.
   assert.ok(!/ALTER TABLE/i.test(sql), 'The migration must not alter a table');
   assert.ok(!/DROP (TABLE|COLUMN|ROLE)/i.test(sql), 'The migration must not drop anything else');
+});
+
+test('Phase 4H: the navigation has no duplicate destinations', () => {
+  const navigation = readFileSync(path.join(appRoot, 'config', 'navigation.ts'), 'utf8');
+
+  // Every entry points at a distinct destination. Two entries sharing an href produced the
+  // "Encountered two children with the same key" crash in the application shell, because the
+  // navigation is rendered with a key derived from the destination.
+  const hrefs = [...navigation.matchAll(/^\s{4}href: '([^']+)',$/gm)].map((m) => m[1]);
+  assert.ok(hrefs.length >= 6, 'The navigation must keep its entries');
+
+  const duplicates = hrefs.filter((href, index) => hrefs.indexOf(href) !== index);
+  assert.deepEqual(
+    [...new Set(duplicates)],
+    [],
+    `The navigation must not contain two entries for the same destination: ${duplicates.join(', ')}`
+  );
+
+  // The shell renders the navigation with a key that includes the destination and the label,
+  // so a future duplicate degrades gracefully instead of crashing the interface.
+  const sidebar = readFileSync(path.join(appRoot, 'components', 'layout', 'sidebar.tsx'), 'utf8');
+  const mobileNav = readFileSync(path.join(appRoot, 'components', 'layout', 'mobile-nav.tsx'), 'utf8');
+
+  assert.match(sidebar, /key=\{`\$\{item\.href\}-\$\{item\.name\}`\}/);
+  assert.match(mobileNav, /key=\{`\$\{link\.href\}-\$\{link\.name\}`\}/);
+});
+
+test('Phase 4H: rendering the navigation produces no duplicate React key warning', async () => {
+  const navigation = readFileSync(path.join(appRoot, 'config', 'navigation.ts'), 'utf8');
+
+  // Rebuild the navigation entries exactly as the configuration declares them.
+  const entries = [...navigation.matchAll(/name: '([^']+)',\s*\n\s*href: '([^']+)',/g)].map((m) => ({
+    name: m[1],
+    href: m[2],
+  }));
+  assert.ok(entries.length >= 6, 'The navigation entries must be readable');
+
+  const React = (await import('react')).default;
+  const { renderToStaticMarkup } = await import('react-dom/server');
+
+  const consoleErrors = [];
+  const originalError = console.error;
+  console.error = (...args) => {
+    consoleErrors.push(args.map((a) => String(a)).join(' '));
+  };
+
+  try {
+    // The same shape the application shell renders, with the same key expression.
+    renderToStaticMarkup(
+      React.createElement(
+        'ul',
+        null,
+        entries.map((item) =>
+          React.createElement('li', { key: `${item.href}-${item.name}` }, item.name)
+        )
+      )
+    );
+  } finally {
+    console.error = originalError;
+  }
+
+  const duplicateKeyWarnings = consoleErrors.filter((message) =>
+    /same key|Encountered two children/i.test(message)
+  );
+  assert.deepEqual(
+    duplicateKeyWarnings,
+    [],
+    `The navigation must render without a duplicate key warning: ${duplicateKeyWarnings.join(' | ')}`
+  );
 });
 
 test('Phase 4H: the technician assignment probe and workflow harness exist', () => {

@@ -4,6 +4,7 @@ import React, { useActionState, useState } from 'react';
 import { loginAction } from '@/actions/auth';
 import { LoginFormState } from '@/types/auth';
 import { Button } from '@/components/ui/button';
+import { TestPersonaPanel, TestPersonaEntry } from '@/components/auth/dev/test-persona-panel';
 import {
   MailIcon,
   LockIcon,
@@ -17,55 +18,23 @@ import {
 interface LoginFormProps {
   initialReason?: string;
   nextUrl?: string;
+  /**
+   * Development-only QA personas. The Server Component supplies this list only
+   * under `next dev` with `CMIRS_ENABLE_TEST_PERSONAS=true`; a production build
+   * always supplies an empty list, so the quick-fill panel never renders and
+   * no test e-mail address reaches the browser.
+   */
+  testPersonas?: readonly TestPersonaEntry[];
 }
 
 const initialState: LoginFormState = {
   success: false,
 };
 
-const TEST_ACCOUNTS = [
-  {
-    role: 'Student / Personnel',
-    email: 'test-student@cmirs.internal',
-    badge: 'student_personnel',
-    desc: 'Report issues & track own submissions',
-  },
-  {
-    role: 'Maintenance Coordinator',
-    email: 'test-coord@cmirs.internal',
-    badge: 'coordinator',
-    desc: 'Triage, assign work & verify repairs',
-  },
-  {
-    role: 'Maintenance Technician',
-    email: 'test-tech@cmirs.internal',
-    badge: 'technician',
-    desc: 'Work on assigned repairs & decline RPC',
-  },
-  {
-    role: 'School Administrator',
-    email: 'test-admin@cmirs.internal',
-    badge: 'administrator',
-    desc: 'Manage roles, facilities & categories',
-  },
-  {
-    role: 'School Management',
-    email: 'test-mgmt@cmirs.internal',
-    badge: 'management',
-    desc: 'Read-only operational analytics & oversight',
-  },
-];
-
-export function LoginForm({ initialReason, nextUrl = '/' }: LoginFormProps) {
+export function LoginForm({ initialReason, nextUrl = '/', testPersonas = [] }: LoginFormProps) {
   const [state, formAction, isPending] = useActionState(loginAction, initialState);
   const [showPassword, setShowPassword] = useState(false);
   const [emailInput, setEmailInput] = useState('');
-  const [showTestAccounts, setShowTestAccounts] = useState(true);
-
-  // Helper to prefill email input for testing
-  const handleSelectTestAccount = (email: string) => {
-    setEmailInput(email);
-  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -221,54 +190,14 @@ export function LoginForm({ initialReason, nextUrl = '/' }: LoginFormProps) {
         </p>
       </div>
 
-      {/* 5. Testing & Verification Quick-Fill Helper (Authorized Test Accounts) */}
-      <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-indigo-600" />
-            <span className="text-xs font-bold text-slate-800">
-              Authorized Test Personas (Stage 2.1 QA)
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowTestAccounts(!showTestAccounts)}
-            className="text-[11px] font-semibold text-indigo-700 hover:text-indigo-900"
-          >
-            {showTestAccounts ? 'Hide' : 'Show'}
-          </button>
-        </div>
-
-        {showTestAccounts && (
-          <div className="mt-2.5 space-y-1.5">
-            <p className="text-[11px] text-slate-500 mb-2">
-              Click any account below to autofill its email for staging authentication verification:
-            </p>
-            <div className="grid grid-cols-1 gap-1.5">
-              {TEST_ACCOUNTS.map((acc) => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => handleSelectTestAccount(acc.email)}
-                  className={`w-full text-left p-2 rounded-lg border transition-all flex items-center justify-between text-xs ${
-                    emailInput === acc.email
-                      ? 'bg-indigo-50 border-indigo-300 ring-1 ring-indigo-300'
-                      : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex flex-col min-w-0 pr-2">
-                    <span className="font-semibold text-slate-800 truncate">{acc.role}</span>
-                    <span className="text-[10px] text-slate-500 font-mono truncate">{acc.email}</span>
-                  </div>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
-                    {acc.badge}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      {/* 5. Development-Only QA Helper */}
+      {/* Renders nothing in a production build: the server supplies an empty persona list
+          outside `next dev`, and the panel itself refuses to render in production. */}
+      <TestPersonaPanel
+        personas={testPersonas}
+        selectedEmail={emailInput}
+        onSelect={(email) => setEmailInput(email)}
+      />
     </div>
   );
 }

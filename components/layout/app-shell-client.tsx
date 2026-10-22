@@ -47,6 +47,7 @@ export function AppShellClient({
           onOpenMobileMenu={handleOpenMobileNav}
           user={user}
           unreadNotificationCount={unreadNotificationCount}
+          isMobileNavOpen={isMobileNavOpen}
         />
 
         {/* Content Container */}

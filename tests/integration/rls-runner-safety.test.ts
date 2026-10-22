@@ -17,9 +17,8 @@ import {
   isValidStoragePath,
   loadAndValidateLedger,
   performTeardown,
-  FixtureLedger,
-  ClientPool,
-} from './rls-runner';
+} from './rls-runner.ts';
+import type { FixtureLedger, ClientPool } from './rls-runner.ts';
 
 let passed = 0;
 let failed = 0;

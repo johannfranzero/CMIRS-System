@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+/tests/integration/.scratch-test/
+/tests/integration/.rls-run-ledger.json
+# Generated teardown scripts produced by the remote RLS harness.
+/tests/integration/cleanup_*.sql
 
 # next.js
 /.next/

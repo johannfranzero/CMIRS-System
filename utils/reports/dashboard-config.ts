@@ -29,20 +29,45 @@ export interface RoleDashboardKpiConfig {
 }
 
 /**
+ * Options that let the caller declare whether the supplied statistics may be trusted.
+ *
+ * The DAL returns an all-zero statistics object when a query fails. Rendering that object as
+ * if it were real would publish a fabricated "there is nothing to do" claim, so the caller
+ * passes `statsAvailable: false` and the configuration degrades to a message that states the
+ * metrics are unavailable instead of asserting a zero.
+ */
+export interface RoleDashboardConfigOptions {
+  statsAvailable?: boolean;
+}
+
+const UNAVAILABLE_WELCOME_MESSAGE_PREFIX = 'Operational metrics are temporarily unavailable';
+
+/**
  * Returns role-appropriate titles, card descriptions, and greeting text for the dashboard UI.
  */
 export function getRoleDashboardConfig(
   role: UserRole,
   firstName: string,
-  stats: DashboardStats
+  stats: DashboardStats,
+  options: RoleDashboardConfigOptions = {}
 ): RoleDashboardKpiConfig {
+  const statsAvailable = options.statsAvailable !== false;
+
+  const welcomeMessage = (buildMessage: (stats: DashboardStats) => string): string => {
+    if (!statsAvailable) {
+      return `Welcome back, ${firstName}. ${UNAVAILABLE_WELCOME_MESSAGE_PREFIX}, so the current workload cannot be displayed.`;
+    }
+    return buildMessage(stats);
+  };
+
   switch (role) {
     case 'student_personnel':
       return {
-        welcomeMessage:
-          stats.totalActive > 0
-            ? `Welcome back, ${firstName}. You have ${stats.totalActive} active maintenance request${stats.totalActive === 1 ? '' : 's'} in progress.`
-            : `Welcome back, ${firstName}. You currently have no active maintenance requests submitted.`,
+        welcomeMessage: welcomeMessage((s) =>
+          s.totalActive > 0
+            ? `Welcome back, ${firstName}. You have ${s.totalActive} active maintenance request${s.totalActive === 1 ? '' : 's'} in progress.`
+            : `Welcome back, ${firstName}. You currently have no active maintenance requests submitted.`
+        ),
         tableTitle: 'My Incident & Maintenance Submissions',
         tableDescription:
           'Track status updates, priority classifications, and repair progress for your reported campus issues.',
@@ -56,10 +81,11 @@ export function getRoleDashboardConfig(
 
     case 'technician':
       return {
-        welcomeMessage:
-          stats.totalActive > 0
-            ? `Welcome back, ${firstName}. You have ${stats.totalActive} assigned maintenance task${stats.totalActive === 1 ? '' : 's'} in your queue.`
-            : `Welcome back, ${firstName}. Your service queue is currently clear with no active assigned tasks.`,
+        welcomeMessage: welcomeMessage((s) =>
+          s.totalActive > 0
+            ? `Welcome back, ${firstName}. You have ${s.totalActive} assigned maintenance task${s.totalActive === 1 ? '' : 's'} in your queue.`
+            : `Welcome back, ${firstName}. Your service queue is currently clear with no active assigned tasks.`
+        ),
         tableTitle: 'My Assigned Work Orders',
         tableDescription:
           'Execute repairs, log progress updates, place work on hold, or complete assigned work orders.',
@@ -73,10 +99,11 @@ export function getRoleDashboardConfig(
 
     case 'coordinator':
       return {
-        welcomeMessage:
-          stats.urgentHazards > 0
-            ? `Welcome back, ${firstName}. ${stats.urgentHazards} urgent hazard${stats.urgentHazards === 1 ? '' : 's'} require immediate coordinator triage.`
-            : `Welcome back, ${firstName}. Campus facilities monitoring ${stats.totalActive} active reports across all zones.`,
+        welcomeMessage: welcomeMessage((s) =>
+          s.urgentHazards > 0
+            ? `Welcome back, ${firstName}. ${s.urgentHazards} urgent hazard${s.urgentHazards === 1 ? '' : 's'} require immediate coordinator triage.`
+            : `Welcome back, ${firstName}. Campus facilities monitoring ${s.totalActive} active reports across all zones.`
+        ),
         tableTitle: 'Campus Incident & Maintenance Queue',
         tableDescription:
           'Triage newly submitted issues, confirm severity priorities, dispatch technicians, and verify completed repairs.',
@@ -90,7 +117,10 @@ export function getRoleDashboardConfig(
 
     case 'administrator':
       return {
-        welcomeMessage: `Welcome back, ${firstName}. Administrative overview active across ${stats.totalActive} campus maintenance report${stats.totalActive === 1 ? '' : 's'}.`,
+        welcomeMessage: welcomeMessage(
+          (s) =>
+            `Welcome back, ${firstName}. Administrative overview active across ${s.totalActive} campus maintenance report${s.totalActive === 1 ? '' : 's'}.`
+        ),
         tableTitle: 'Campus Incident & Maintenance Queue',
         tableDescription:
           'Comprehensive administrative oversight of maintenance operations, facility locations, and role access.',
@@ -104,7 +134,10 @@ export function getRoleDashboardConfig(
 
     case 'management':
       return {
-        welcomeMessage: `Welcome back, ${firstName}. Executive facility performance oversight across ${stats.totalActive} active report${stats.totalActive === 1 ? '' : 's'}.`,
+        welcomeMessage: welcomeMessage(
+          (s) =>
+            `Welcome back, ${firstName}. Executive facility performance oversight across ${s.totalActive} active report${s.totalActive === 1 ? '' : 's'}.`
+        ),
         tableTitle: 'Campus Incident & Maintenance Queue',
         tableDescription:
           'Read-only operational analytics, facility reporting distributions, and maintenance oversight.',

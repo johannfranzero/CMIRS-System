@@ -20,14 +20,9 @@ import { requireRole } from '@/utils/auth/server';
 import { createClient } from '@/utils/supabase/server';
 import { describeLifecycleRpcError } from '@/utils/reports/lifecycle-rpc';
 import { USER_ROLES, type UserRole } from '@/types/auth';
+import type { AccountManagementActionState } from '@/utils/settings/action-state';
 
-export interface AccountManagementActionState {
-  status: 'idle' | 'success' | 'error';
-  message?: string;
-  profileId?: string;
-}
-
-export const INITIAL_ACCOUNT_MANAGEMENT_STATE: AccountManagementActionState = { status: 'idle' };
+export type { AccountManagementActionState };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

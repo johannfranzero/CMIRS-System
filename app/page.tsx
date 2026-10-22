@@ -42,7 +42,12 @@ export default async function DashboardPage() {
   const stats = kpiResult.stats;
   const liveReports = queueResult.reports;
   const facilityBreakdown = facilityResult.breakdown;
-  const dashboardConfig = getRoleDashboardConfig(role, firstName, stats);
+  // The DAL returns an all-zero statistics object when the KPI query fails. Passing that
+  // object to the presentation layer as if it were real would publish a fabricated
+  // "there is nothing to do" claim, so the availability of the statistics is declared.
+  const dashboardConfig = getRoleDashboardConfig(role, firstName, stats, {
+    statsAvailable: !kpiResult.error,
+  });
   const isOversightRole = role === 'coordinator' || role === 'administrator' || role === 'management';
   const isTechnician = role === 'technician';
   const isStudent = role === 'student_personnel';

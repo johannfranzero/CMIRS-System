@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
-import { LoginFormState } from '@/types/auth';
+import type { LoginFormState } from '@/types/auth';
 import { isValidEmail, sanitizeRedirectUrl } from '@/utils/auth/validation';
 
 /**

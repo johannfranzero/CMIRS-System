@@ -13,13 +13,9 @@ import {
   markAllNotificationsAsRead,
   markNotificationAsRead,
 } from '@/utils/notifications/dal';
+import type { NotificationActionState } from '@/utils/notifications/action-state';
 
-export interface NotificationActionState {
-  status: 'idle' | 'success' | 'error';
-  message?: string;
-}
-
-export const INITIAL_NOTIFICATION_ACTION_STATE: NotificationActionState = { status: 'idle' };
+export type { NotificationActionState };
 
 /**
  * Marks a single notification as read.

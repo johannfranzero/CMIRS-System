@@ -45,14 +45,6 @@ export const MAIN_NAVIGATION: readonly NavigationItem[] = [
     isPlaceholder: false,
   },
   {
-    name: 'Report Issue',
-    href: '/reports/new',
-    icon: PlusCircleIcon,
-    allowedRoles: REPORT_SUBMITTER_ROLES, // Only the reporter roles may file a report
-    badge: 'Active',
-    isPlaceholder: false,
-  },
-  {
     name: 'Submit Report',
     href: '/reports/new',
     icon: PlusCircleIcon,
@@ -93,6 +85,28 @@ export const MAIN_NAVIGATION: readonly NavigationItem[] = [
     isPlaceholder: false,
   },
 ] as const;
+
+/**
+ * Development-time invariant.
+ *
+ * The navigation is rendered with a key derived from the destination. Two entries pointing at
+ * the same destination therefore produced the React warning
+ * "Encountered two children with the same key" and could make the application shell drop or
+ * duplicate links. The invariant is checked here so that the mistake surfaces immediately
+ * during development instead of in the browser console.
+ */
+if (process.env.NODE_ENV !== 'production') {
+  const seenDestinations = new Set<string>();
+  for (const item of MAIN_NAVIGATION) {
+    if (seenDestinations.has(item.href)) {
+      console.error(
+        `[CMIRS] Duplicate navigation destination "${item.href}" (entry "${item.name}"). ` +
+          'Each navigation entry must point at a distinct destination.'
+      );
+    }
+    seenDestinations.add(item.href);
+  }
+}
 
 /**
  * Filters the centralized navigation list to include only routes

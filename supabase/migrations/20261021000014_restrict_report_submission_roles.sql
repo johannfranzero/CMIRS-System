@@ -27,8 +27,15 @@
 --     condition is added or removed.
 --   * The application path is unaffected: the submission command
 --     `public.submit_report_with_notifications(...)` is SECURITY DEFINER and executes as the
---     table owner, so RLS is not applied to it. The command itself re-checks the caller's
---     role before inserting.
+--     table owner, so RLS is not applied to it.
+--
+--     CORRECTION (production readiness audit, 2026-10-22): an earlier revision of this
+--     header stated that "the command itself re-checks the caller's role before inserting".
+--     That was incorrect. The command only requires an ACTIVE PROFILE with a role; it
+--     performs NO reporter-role check, so this migration alone does NOT close the RPC path.
+--     Migration `20261021000015_harden_report_submission_and_function_privileges.sql` closes
+--     it with a BEFORE INSERT trigger on `public.reports`, which fires for the RPC path, the
+--     PostgREST path and every future path. Both migrations should be applied.
 --   * No table, column, index, trigger, role, grant, or data is created, altered or removed.
 --   * Reversible: re-running the migration-005 definition restores the previous policy.
 --

@@ -6,7 +6,7 @@ import { formatRoleLabel } from '@/utils/auth/validation';
  * Examples:
  * - "Jordan Miller" -> "JM"
  * - "Alice" -> "A"
- * - "test-admin@cmirs.internal" -> "TA"
+ * - "alex.reyes@campus.edu" -> "AR"
  * - null/undefined -> "AU" (Authorized User)
  */
 export function getInitials(name?: string | null, email?: string | null): string {

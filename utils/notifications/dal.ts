@@ -20,10 +20,10 @@ import {
   getNotificationsFromClient,
   getUnreadNotificationCountFromClient,
   type NotificationReadClient,
-} from './runtime';
+} from './runtime.ts';
 
-export { getNotificationsFromClient, getUnreadNotificationCountFromClient } from './runtime';
-export type { NotificationReadClient } from './runtime';
+export { getNotificationsFromClient, getUnreadNotificationCountFromClient } from './runtime.ts';
+export type { NotificationReadClient } from './runtime.ts';
 
 /**
  * Loads the signed-in user's notifications and the exact unread count.

@@ -2,7 +2,7 @@ import { cache } from 'react';
 import { redirect } from 'next/navigation';
 import { connection } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { AuthenticatedUser, UserProfile, UserRole } from '@/types/auth';
+import type { AuthenticatedUser, UserProfile, UserRole } from '@/types/auth';
 import { isUserRole, sanitizeRedirectUrl } from '@/utils/auth/validation';
 
 /**

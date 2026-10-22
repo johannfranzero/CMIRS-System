@@ -131,6 +131,8 @@ export function MobileNav({ isOpen, onClose, onOpen, user }: MobileNavProps) {
           onClick={onOpen}
           className="flex flex-col items-center py-1 px-1.5 sm:px-2 rounded-lg text-[10px] sm:text-[11px] font-medium text-slate-500 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
           aria-label="Open full campus menu"
+          aria-expanded={isOpen}
+          aria-controls="cmirs-mobile-nav-drawer"
         >
           <MenuIcon size={20} className="w-5 h-5 mb-0.5 shrink-0" />
           <span>More</span>
@@ -140,6 +142,7 @@ export function MobileNav({ isOpen, onClose, onOpen, user }: MobileNavProps) {
       {/* 2. Slide-out Drawer Navigation */}
       {isOpen && (
         <div
+          id="cmirs-mobile-nav-drawer"
           className="lg:hidden fixed inset-0 z-50 flex"
           role="dialog"
           aria-modal="true"
@@ -186,7 +189,7 @@ export function MobileNav({ isOpen, onClose, onOpen, user }: MobileNavProps) {
 
                 return (
                   <Link
-                    key={link.href}
+                    key={`${link.href}-${link.name}`}
                     href={link.href}
                     onClick={onClose}
                     className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 ${

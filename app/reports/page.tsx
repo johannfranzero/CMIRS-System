@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/icons';
 import { getReportsQueue, buildReportsQueueUrl } from '@/utils/reports/dal';
 import { ReportStatus } from '@/types/reports';
+import { canSubmitReport } from '@/types/auth';
 
 export const instant = false;
 
@@ -104,15 +105,25 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* The DAL returns `totalCount: 0` when the query fails. Publishing that as a
+                real count would show a fabricated "0 Reports Registered", so the counter
+                states that the total is unavailable whenever the query failed. */}
             <div className="hidden sm:inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-              {queueResult.totalCount} {queueResult.totalCount === 1 ? 'Report' : 'Reports'} Registered
+              {queueResult.error
+                ? 'Total unavailable'
+                : `${queueResult.totalCount} ${queueResult.totalCount === 1 ? 'Report' : 'Reports'} Registered`}
             </div>
 
-            <Link href="/reports/new">
-              <Button variant="primary" leftIcon={<PlusCircleIcon className="w-4 h-4" />}>
-                Submit Report
-              </Button>
-            </Link>
+            {/* Only the reporter roles may file a maintenance report. The authorization is
+                enforced on the server in the `submitReportAction` Server Action and the
+                `/reports/new` route; this is the usability affordance. */}
+            {canSubmitReport(role) && (
+              <Link href="/reports/new">
+                <Button variant="primary" leftIcon={<PlusCircleIcon className="w-4 h-4" />}>
+                  Submit Report
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 

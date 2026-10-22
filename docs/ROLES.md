@@ -141,20 +141,31 @@ Oversight role for campus leadership who need visibility into maintenance operat
 
 ## Role Assignment
 
-### Registration Flow
+### Account Provisioning Flow
 
-1. A new user registers through Supabase Auth.
-2. The system automatically assigns the **default role**: Student / School Personnel.
-3. A **School Administrator** reviews the registration and assigns the appropriate role.
-4. The user's permissions update to reflect their new role.
+Public self-registration is **disabled**. There is no sign-up form and no self-service
+password recovery in the application.
+
+1. An administrator creates the account in the **Supabase dashboard** (Authentication → Users →
+   Add user) and confirms the e-mail.
+2. The `handle_new_user` trigger creates the matching `public.profiles` row automatically with
+   the **default role**: Student / School Personnel.
+3. The account appears immediately in the **administrator directory** in `/settings`, together
+   with its real authentication-linkage status.
+4. A **School Administrator** assigns the appropriate role and activation state.
+5. The user's permissions update to reflect their new role, and the change is written to the
+   append-only `public.role_change_audit` trail.
 
 ### Role Change Rules
 
 - Only a School Administrator can change a user's role.
 - Role changes take effect immediately.
-- A user cannot change their own role.
-- Role changes should be logged for audit purposes.
-- A School Administrator cannot elevate their own privileges beyond their current role assignment.
+- A user cannot change their own role — an administrator cannot alter their own account at all,
+  including its activation state.
+- Every role change is logged to the audit trail in the same transaction as the change, with a
+  mandatory written reason.
+- The audit trail is readable by administrators and management, and is append-only: no role
+  other than the database owner can modify or delete an entry.
 
 ### Default Role Rationale
 
@@ -234,7 +245,7 @@ The following decisions have not been finalized. They are recorded here to ensur
 | PD-R3 | Can technicians request or initiate work holds? | Work-hold workflow, status transitions, `report_status` values | Recommend allowing technician-initiated holds with a required reason, subject to coordinator review. |
 | PD-R4 | Can a Coordinator verify a report they themselves submitted? | Separation of duties, verification constraints, RLS policies | Recommend prohibiting self-verification to maintain independence. A different coordinator should verify. |
 | PD-R5 | Can submitters cancel their own reports after assignment? | Cancellation workflow, status transitions, reporter authority | Recommend allowing reporter cancellation only before assignment. After assignment, require coordinator approval. |
-| PD-R6 | Can Administrator and Management roles submit reports? | Role-permission matrix, `reports` insert policy | **Resolved 2026-10-21 (Phase 4H).** PD-R6 ("all authenticated roles may submit") is **withdrawn**: only Student / School Personnel and Maintenance Coordinator may file a maintenance report. Enforced on the server (`submitReportAction`, the `/reports/new` route) and, in `supabase/migrations/20261021000014_restrict_report_submission_roles.sql`, at the database layer. The Maintenance Technician may not file a report; a Coordinator can raise one on the user's behalf. |
+| PD-R6 | Can Administrator and Management roles submit reports? | Role-permission matrix, `reports` insert policy | **Resolved 2026-10-21 (Phase 4H).** PD-R6 ("all authenticated roles may submit") is **withdrawn**: only Student / School Personnel and Maintenance Coordinator may file a maintenance report. Enforced on the server (`submitReportAction`, the `/reports/new` route). **Database-layer enforcement was claimed but was not in effect.** The production readiness audit of 2026-10-22 confirmed that migration `20261021000014_restrict_report_submission_roles.sql` had **not** been applied, and that the SECURITY DEFINER command `public.submit_report_with_notifications(...)` — which bypasses RLS — performed **no** reporter-role check. Two migrations now carry the database-layer enforcement and both require explicit owner authorization before they are applied: `…014` (the RLS policy) and `…015` (a BEFORE INSERT trigger on `public.reports` that closes the command path as well). The Maintenance Technician may not file a report; a Coordinator can raise one on the user's behalf. |
 
 ---
 

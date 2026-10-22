@@ -73,7 +73,7 @@ export function Sidebar({ isCollapsed, onToggleCollapse, user }: SidebarProps) {
 
           return (
             <Link
-              key={item.href}
+              key={`${item.href}-${item.name}`}
               href={item.href}
               className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative w-full overflow-hidden ${
                 isActive
