@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserRole, USER_ROLES } from '@/types/auth';
+import { UserRole, USER_ROLES, REPORT_SUBMITTER_ROLES } from '@/types/auth';
 import {
   DashboardIcon,
   ReportsIcon,
@@ -7,6 +7,7 @@ import {
   LocationsIcon,
   AnalyticsIcon,
   SettingsIcon,
+  BellIcon,
   IconProps,
 } from '@/components/ui/icons';
 
@@ -44,10 +45,26 @@ export const MAIN_NAVIGATION: readonly NavigationItem[] = [
     isPlaceholder: false,
   },
   {
+    name: 'Report Issue',
+    href: '/reports/new',
+    icon: PlusCircleIcon,
+    allowedRoles: REPORT_SUBMITTER_ROLES, // Only the reporter roles may file a report
+    badge: 'Active',
+    isPlaceholder: false,
+  },
+  {
     name: 'Submit Report',
     href: '/reports/new',
     icon: PlusCircleIcon,
-    allowedRoles: USER_ROLES, // Approved PD-R6: All 5 roles permitted to submit
+    allowedRoles: REPORT_SUBMITTER_ROLES, // Only the reporter roles may file a report
+    badge: 'Active',
+    isPlaceholder: false,
+  },
+  {
+    name: 'Notifications',
+    href: '/notifications',
+    icon: BellIcon,
+    allowedRoles: USER_ROLES, // Phase 4C: every authenticated role has its own recipient-scoped inbox
     badge: 'Active',
     isPlaceholder: false,
   },

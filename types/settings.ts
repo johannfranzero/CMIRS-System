@@ -6,6 +6,12 @@ export interface SettingsUserDirectoryEntry {
   email: string;
   role: UserRole;
   isActive: boolean;
+  /**
+   * Phase 4E: true when a CONFIRMED Supabase Auth user exists for this profile.
+   * A profile row without one cannot sign in and must not be presented as a working account.
+   * `null` means the linkage status could not be read.
+   */
+  hasAuthAccount: boolean | null;
 }
 
 export type SettingsUserDirectoryState = 'ready' | 'incomplete' | 'error';

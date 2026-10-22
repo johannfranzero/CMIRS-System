@@ -53,6 +53,47 @@ interface RoleChangeAuditQuery {
 
 export interface SettingsReadSupabaseClient {
   from(table: 'profiles' | 'role_change_audit'): unknown;
+  rpc?(
+    fn: string,
+    params: Record<string, unknown>
+  ): PromiseLike<{ data: unknown; error: unknown }>;
+}
+
+/**
+ * Loads the bulk auth-account linkage status for the given profile ids.
+ *
+ * Phase 4E: one round trip for the whole directory. A failure yields an empty map, which
+ * makes the directory show an "unknown" linkage state rather than claiming that an account
+ * has (or has not) a login.
+ */
+async function loadAuthAccountStatus(
+  supabase: SettingsReadSupabaseClient,
+  profileIds: string[]
+): Promise<Map<string, boolean>> {
+  const status = new Map<string, boolean>();
+  if (profileIds.length === 0 || typeof supabase.rpc !== 'function') {
+    return status;
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('profiles_auth_account_status', {
+      p_profile_ids: profileIds,
+    });
+
+    if (error || !Array.isArray(data)) {
+      return status;
+    }
+
+    for (const row of data as Array<{ profile_id?: string; has_auth_account?: boolean }>) {
+      if (typeof row.profile_id === 'string' && typeof row.has_auth_account === 'boolean') {
+        status.set(row.profile_id, row.has_auth_account);
+      }
+    }
+  } catch {
+    return status;
+  }
+
+  return status;
 }
 
 export async function getAdministratorSettingsDataFromClient(
@@ -83,11 +124,18 @@ export async function getAdministratorSettingsDataFromClient(
         .limit(ROLE_CHANGE_HISTORY_LIMIT),
     ]);
 
+    const profiles = (usersResult.data ?? []) as RawSettingsUser[];
+    const authAccountStatus = await loadAuthAccountStatus(
+      supabase,
+      profiles.map((profile) => profile.id).filter((id): id is string => typeof id === 'string')
+    );
+
     return {
       userDirectory: createSettingsUserDirectoryResult(
         usersResult.data,
         usersResult.count,
-        usersResult.error
+        usersResult.error,
+        authAccountStatus
       ),
       roleChangeHistory: auditResult.error
         ? []

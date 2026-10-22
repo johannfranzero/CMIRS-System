@@ -35,13 +35,17 @@ function relationName(
   return typeof value === 'string' && value.trim() ? value.trim() : 'Name unavailable';
 }
 
-export function mapSettingsUser(user: RawSettingsUser): SettingsUserDirectoryEntry {
+export function mapSettingsUser(
+  user: RawSettingsUser,
+  hasAuthAccount: boolean | null = null
+): SettingsUserDirectoryEntry {
   return {
     id: user.id ?? '',
     fullName: user.full_name?.trim() || 'Name unavailable',
     email: user.email?.trim() || 'Email unavailable',
     role: user.role ?? 'student_personnel',
     isActive: user.is_active === true,
+    hasAuthAccount,
   };
 }
 
@@ -60,7 +64,8 @@ export function isSettingsUserDirectoryComplete(
 export function createSettingsUserDirectoryResult(
   users: RawSettingsUser[] | null | undefined,
   totalCount: number | null | undefined,
-  error: unknown
+  error: unknown,
+  authAccountStatus?: Map<string, boolean> | null
 ): SettingsUserDirectoryResult {
   const fetchedCount = users?.length ?? 0;
 
@@ -85,7 +90,12 @@ export function createSettingsUserDirectoryResult(
   }
 
   return {
-    users: (users ?? []).map(mapSettingsUser),
+    users: (users ?? []).map((user) =>
+      mapSettingsUser(
+        user,
+        user.id && authAccountStatus ? (authAccountStatus.get(user.id) ?? null) : null
+      )
+    ),
     state: 'ready',
     totalCount: totalCount ?? null,
     fetchedCount,

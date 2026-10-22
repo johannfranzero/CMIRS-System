@@ -13,6 +13,7 @@ import {
   MenuIcon,
 } from '@/components/ui/icons';
 import { AuthenticatedUser } from '@/types/auth';
+import { canSubmitReport } from '@/types/auth';
 import { getNavigationItemsForRole } from '@/config/navigation';
 import { getInitials, getUserDisplayName, getUserRoleTitle } from '@/utils/auth/user';
 import { LogoutButton } from '@/components/auth/logout-button';
@@ -87,17 +88,30 @@ export function MobileNav({ isOpen, onClose, onOpen, user }: MobileNavProps) {
           <span>Reports</span>
         </Link>
 
-        {/* Elevated Quick Submit Action */}
-        <Link
-          href="/reports/new"
-          className="flex flex-col items-center -mt-4 group focus-visible:outline-none"
-          aria-label="Submit new report"
-        >
-          <div className="w-11 h-11 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md group-hover:bg-indigo-700 transition-transform group-active:scale-95 group-focus-visible:ring-2 group-focus-visible:ring-indigo-600 group-focus-visible:ring-offset-2">
-            <PlusCircleIcon size={22} className="w-5.5 h-5.5" />
-          </div>
-          <span className="text-[10px] font-medium text-slate-600 mt-0.5">Submit</span>
-        </Link>
+        {/* Elevated Quick Submit Action.
+            Phase 4H: only the reporter roles may file a maintenance report. The authorization
+            is enforced on the server (the `submitReportAction` Server Action and the
+            `/reports/new` route); the control is hidden for the other roles so the affordance
+            is truthful. For those roles the slot keeps the bar balanced. */}
+        {canSubmitReport(user?.profile?.role) ? (
+          <Link
+            href="/reports/new"
+            className="flex flex-col items-center -mt-4 group focus-visible:outline-none"
+            aria-label="Submit new report"
+          >
+            <div className="w-11 h-11 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md group-hover:bg-indigo-700 transition-transform group-active:scale-95 group-focus-visible:ring-2 group-focus-visible:ring-indigo-600 group-focus-visible:ring-offset-2">
+              <PlusCircleIcon size={22} className="w-5.5 h-5.5" />
+            </div>
+            <span className="text-[10px] font-medium text-slate-600 mt-0.5">Submit</span>
+          </Link>
+        ) : (
+          <span aria-hidden="true" className="flex flex-col items-center -mt-4">
+            <div className="w-11 h-11 rounded-full bg-slate-200 text-white flex items-center justify-center shadow-sm">
+              <PlusCircleIcon size={22} className="w-5.5 h-5.5" />
+            </div>
+            <span className="text-[10px] font-medium text-slate-400 mt-0.5">Submit</span>
+          </span>
+        )}
 
         <Link
           href="/locations"

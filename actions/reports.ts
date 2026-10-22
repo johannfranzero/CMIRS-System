@@ -34,6 +34,7 @@ import type {
 } from '../types/mutations';
 import type { ReportStatus, PriorityLevel } from '../types/reports';
 import type { AuthenticatedUser } from '../types/auth';
+import { canSubmitReport } from '../types/auth.ts';
 import {
   validateReportSubmissionInput,
   validateReportTriageInput,
@@ -178,6 +179,10 @@ export async function submitReportAction(
       locationId: payload.get('locationId')?.toString(),
       isUrgentHazard:
         payload.get('isUrgentHazard') === 'true' || payload.get('isUrgentHazard') === 'on',
+      // Idempotency token for the notification-bearing command RPC. The client supplies it so
+      // that a retry of the same user action returns the original report instead of creating
+      // a second one.
+      requestId: payload.get('requestId')?.toString(),
     };
   } else {
     rawInput = { ...payload };
@@ -202,8 +207,27 @@ export async function submitReportAction(
     };
   }
 
+  // 3a. Authorize the ROLE for the submission operation.
+  //
+  // Only the reporter roles may submit a maintenance report (see `REPORT_SUBMITTER_ROLES`).
+  // A Maintenance Technician, a School Administrator and School Management may not file a
+  // report. This is enforced on the server, so hiding the entry point in the interface is a
+  // usability measure only and never the authorization.
+  if (!canSubmitReport(user.profile.role)) {
+    return {
+      status: 'error',
+      message:
+        'Your account role is not permitted to submit maintenance reports. A Maintenance Coordinator ' +
+        'can raise a report on your behalf if you contact them.',
+    };
+  }
+
   // 4. Invoke Data Access Layer
-  const mutationContext: MutationContext = { user, supabase: context?.supabase };
+  const mutationContext: MutationContext = {
+    user,
+    supabase: context?.supabase,
+    requestId: typeof rawInput.requestId === 'string' ? rawInput.requestId : undefined,
+  };
   const result = await createReportRecord(validation.data, mutationContext);
 
   if (!result.success || !result.data) {
@@ -245,6 +269,7 @@ export async function triageReportAction(
       confirmedPriority: payload.get('confirmedPriority')?.toString(),
       // Status is always 'under_review' for triage; assignment is a separate command.
       status: 'under_review',
+      requestId: payload.get('requestId')?.toString(),
     };
   } else {
     rawInput = { ...payload };
@@ -277,7 +302,11 @@ export async function triageReportAction(
   }
 
   // 4. Invoke Data Access Layer
-  const mutationContext: MutationContext = { user, supabase: context?.supabase };
+  const mutationContext: MutationContext = {
+    user,
+    supabase: context?.supabase,
+    requestId: typeof rawInput.requestId === 'string' ? rawInput.requestId : undefined,
+  };
   const result = await triageReportRecord(validation.data, mutationContext);
 
   if (!result.success || !result.data) {
@@ -319,6 +348,7 @@ export async function assignTechnicianAction(
       reportId: payload.get('reportId')?.toString(),
       technicianId: payload.get('technicianId')?.toString(),
       notes: rawNotes && rawNotes.trim().length > 0 ? rawNotes : undefined,
+      requestId: payload.get('requestId')?.toString(),
     };
   } else {
     rawInput = { ...payload };
@@ -351,7 +381,11 @@ export async function assignTechnicianAction(
   }
 
   // 4. Invoke Data Access Layer
-  const mutationContext: MutationContext = { user, supabase: context?.supabase };
+  const mutationContext: MutationContext = {
+    user,
+    supabase: context?.supabase,
+    requestId: typeof rawInput.requestId === 'string' ? rawInput.requestId : undefined,
+  };
   const result = await assignTechnicianToReport(validation.data, mutationContext);
 
   if (!result.success || !result.data) {
@@ -423,7 +457,11 @@ export async function declineAssignmentAction(
   }
 
   // 4. Invoke Data Access Layer
-  const mutationContext: MutationContext = { user, supabase: context?.supabase };
+  const mutationContext: MutationContext = {
+    user,
+    supabase: context?.supabase,
+    requestId: typeof rawInput.requestId === 'string' ? rawInput.requestId : undefined,
+  };
   const result = await declineAssignmentViaRpc(validation.data, mutationContext);
 
   if (!result.success || !result.data) {
@@ -467,6 +505,7 @@ export async function transitionReportStatusAction(
       targetStatus: payload.get('targetStatus')?.toString(),
       reason: rawReason && rawReason.trim().length > 0 ? rawReason : undefined,
       assignmentId: rawAssignId && rawAssignId.trim().length > 0 ? rawAssignId : undefined,
+      requestId: payload.get('requestId')?.toString(),
     };
   } else {
     rawInput = { ...payload };
@@ -492,7 +531,11 @@ export async function transitionReportStatusAction(
   }
 
   // 4. Invoke Data Access Layer
-  const mutationContext: MutationContext = { user, supabase: context?.supabase };
+  const mutationContext: MutationContext = {
+    user,
+    supabase: context?.supabase,
+    requestId: typeof rawInput.requestId === 'string' ? rawInput.requestId : undefined,
+  };
   const result = await transitionReportStatusRecord(validation.data, mutationContext);
 
   if (!result.success || !result.data) {
@@ -565,7 +608,11 @@ export async function createWorkLogAction(
   }
 
   // 4. Invoke Data Access Layer
-  const mutationContext: MutationContext = { user, supabase: context?.supabase };
+  const mutationContext: MutationContext = {
+    user,
+    supabase: context?.supabase,
+    requestId: typeof rawInput.requestId === 'string' ? rawInput.requestId : undefined,
+  };
   const result = await createWorkLogRecord(validation.data, mutationContext);
 
   if (!result.success || !result.data) {
@@ -610,6 +657,7 @@ export async function verifyReportAction(
       reportId: payload.get('reportId')?.toString(),
       isSatisfactory: isSatRaw === 'true' || isSatRaw === 'on',
       notes: rawNotes && rawNotes.trim().length > 0 ? rawNotes : undefined,
+      requestId: payload.get('requestId')?.toString(),
     };
   } else {
     rawInput = { ...payload };
@@ -642,7 +690,11 @@ export async function verifyReportAction(
   }
 
   // 4. Invoke Data Access Layer (enforces separation of duties and completed status)
-  const mutationContext: MutationContext = { user, supabase: context?.supabase };
+  const mutationContext: MutationContext = {
+    user,
+    supabase: context?.supabase,
+    requestId: typeof rawInput.requestId === 'string' ? rawInput.requestId : undefined,
+  };
   const result = await verifyReportRecord(validation.data, mutationContext);
 
   if (!result.success || !result.data) {

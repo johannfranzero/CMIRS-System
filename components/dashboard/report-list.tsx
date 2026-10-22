@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { MaintenanceReport } from '@/types/reports';
 import { UserRole } from '@/types/auth';
+import { canSubmitReport } from '@/types/auth';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
-import { SearchIcon, FilterIcon, BuildingIcon, UserIcon } from '@/components/ui/icons';
+import { SearchIcon, FilterIcon, BuildingIcon, UserIcon, ExclamationTriangleIcon } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/empty-state';
 
 interface ReportListProps {
@@ -14,6 +15,18 @@ interface ReportListProps {
   userRole?: UserRole;
   emptyTitle?: string;
   emptyDescription?: string;
+  /**
+   * Phase 4D.2: the sanitized error returned by the DAL when the query FAILED.
+   * When present the list must show a failure state — never an "empty queue" — so that a
+   * database error is never presented as a successful result with zero records.
+   */
+  error?: string | null;
+  /**
+   * Phase 4D.2: the authoritative server-side total of RLS-visible reports for the current
+   * query. Without it the "All" tab would show the number of rows on the current page and
+   * present a truncated page as a complete total.
+   */
+  totalCount?: number | null;
 }
 
 export function ReportList({
@@ -21,6 +34,8 @@ export function ReportList({
   userRole,
   emptyTitle,
   emptyDescription,
+  error = null,
+  totalCount = null,
 }: ReportListProps) {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
@@ -83,9 +98,39 @@ export function ReportList({
     }
   };
 
+  // Phase 4D.2: a failed query is NOT an empty queue. Render the failure first so a database
+  // error can never be mistaken for "you have no reports".
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-col items-center justify-center p-8 sm:p-12 text-center bg-amber-50/60 rounded-xl border border-amber-200"
+      >
+        <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 mb-3" aria-hidden="true">
+          <ExclamationTriangleIcon size={24} className="w-6 h-6" />
+        </div>
+        <h3 className="text-base font-semibold text-slate-800">Report data could not be loaded</h3>
+        <p className="mt-1 text-sm text-amber-800 max-w-sm">{error}</p>
+        <p className="mt-2 text-xs text-slate-500 max-w-sm">
+          This is a database query failure, not an empty result. Reload the page to try again.
+        </p>
+        <button
+          type="button"
+          onClick={() => router.refresh()}
+          className="mt-4 px-3 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-white text-amber-800 hover:bg-amber-50 transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   if (reports.length === 0) {
-    const isStudent = userRole === 'student_personnel';
-    const isTech = userRole === 'technician';
+  const isStudent = userRole === 'student_personnel';
+  const isTech = userRole === 'technician';
+  // Only the reporter roles may file a maintenance report (Phase 4H). The authorization is
+  // enforced on the server; this keeps the call to action truthful for the viewer.
+  const isReporter = canSubmitReport(userRole);
 
     const defaultTitle = isStudent
       ? 'No maintenance reports submitted yet'
@@ -103,9 +148,9 @@ export function ReportList({
       <EmptyState
         title={emptyTitle || defaultTitle}
         description={emptyDescription || defaultDescription}
-        actionLabel={isStudent ? 'Submit a Maintenance Report' : undefined}
+        actionLabel={isReporter ? 'Submit a Maintenance Report' : undefined}
         onAction={
-          isStudent
+          isReporter
             ? () => {
                 router.push('/reports/new');
               }
@@ -166,7 +211,7 @@ export function ReportList({
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          All Active ({reports.length})
+          All Active ({totalCount ?? reports.length})
         </button>
         <button
           onClick={() => setStatusFilter('urgent')}

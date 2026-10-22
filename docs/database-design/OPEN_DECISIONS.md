@@ -37,7 +37,7 @@ For each decision:
 | PD-R3 | ROLES.md | RESOLVED BY PD-W1 | Technician ability to request work hold |
 | PD-R4 | ROLES.md, SECURITY.md | **OWNER APPROVED** | Coordinator self-verification prohibited |
 | PD-R5 | ROLES.md | RESOLVED BY PD-W2 | Reporter cancellation authority |
-| PD-R6 | ROLES.md | **OWNER APPROVED** | All authenticated roles may submit reports |
+| PD-R6 | ROLES.md | **OWNER APPROVED, SUPERSEDED 2026-10-21 (Phase 4H)** | All authenticated roles may submit reports — **withdrawn**: only Student / School Personnel and Maintenance Coordinator may file a report |
 | PD-S1 | SECURITY.md | OPEN | API rate limiting strategy |
 | PD-S2 | SECURITY.md | OPEN | Session timeout duration |
 | PD-S3 | SECURITY.md | OPEN | Password policy requirements |

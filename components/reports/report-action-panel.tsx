@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useActionState, useState } from 'react';
+import React, { useActionState, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   triageReportAction,
@@ -49,8 +49,13 @@ export function ReportActionPanel({
   const isAssignedTech = Boolean(activeAssignment && activeAssignment.technicianId === userId);
   const isReporter = Boolean(report.reporterId && report.reporterId === userId);
 
-  // Active sub-form tab in the action panel
-  const [activeTab, setActiveTab] = useState<string>('overview');
+  // Active sub-form tab in the action panel.
+  //
+  // The panel opens on the tab that holds the viewer's next action, so a technician who is
+  // assigned the work sees "Work Order Controls" immediately and a coordinator sees the step
+  // the report is waiting for. The viewer's explicit choice is remembered per report.
+  const [tabOverride, setTabOverride] = useState<{ reportId: string; tab: string } | null>(null);
+  const setActiveTab = (tab: string) => setTabOverride({ reportId: report.id, tab });
 
   // Server Action hooks
   const [triageState, triageFormAction, triagePending] = useActionState(
@@ -78,6 +83,32 @@ export function ReportActionPanel({
     INITIAL_ACTION_STATE
   );
 
+  // Idempotency token for the notification-bearing command RPCs (Phase 4C, S-03).
+  //
+  // The token is minted on the first submit of an attempt and reused for every retry of that
+  // attempt, so a double submit or a retry after a dropped response is answered by the
+  // database as a REPLAY of the original command. It is cleared once the action settles, so
+  // the next command of the same kind is a new command.
+  const requestTokenRef = useRef<string>('');
+  /**
+   * Stamps the idempotency token into the form before the Server Action runs, so that a
+   * double submit or a retry after a dropped response is answered by the database as a
+   * REPLAY of the original command instead of creating a second report.
+   */
+  const stampRequestToken = (event: React.FormEvent<HTMLFormElement>) => {
+    if (!requestTokenRef.current) {
+      requestTokenRef.current = globalThis.crypto.randomUUID();
+    }
+    const tokenField = event.currentTarget.elements.namedItem('requestId');
+    if (tokenField instanceof HTMLInputElement) {
+      tokenField.value = requestTokenRef.current;
+    }
+  };
+
+  useEffect(() => {
+    requestTokenRef.current = '';
+  }, [triageState, assignState, transitionState, verifyState]);
+
   // Local state for interactive controls
   const [triagePriority, setTriagePriority] = useState<PriorityLevel>(
     report.priority || (report.isUrgentHazard ? 'critical' : 'medium')
@@ -87,6 +118,7 @@ export function ReportActionPanel({
   const [dispatchNotes, setDispatchNotes] = useState<string>('');
   const [declineReason, setDeclineReason] = useState<string>('');
   const [holdReason, setHoldReason] = useState<string>('');
+  const [completionNotes, setCompletionNotes] = useState<string>('');
   const [cancelReason, setCancelReason] = useState<string>('');
   const [workHours, setWorkHours] = useState<string>('1.0');
   const [workDescription, setWorkDescription] = useState<string>('');
@@ -102,6 +134,22 @@ export function ReportActionPanel({
     : isTechnicianWorker
     ? 'Separation of duties: Coordinators who performed repair work cannot verify the repair (D2).'
     : null;
+
+  // The coordinator verifies what the technician actually did. These are derived from the
+  // report's own real records: the most recent transition into 'completed' (which carries the
+  // technician's repair notes as its reason), the most recent work log, and the number of
+  // active evidence attachments.
+  const latestCompletionNote = [...report.statusHistory]
+    .filter((entry) => entry.newStatus === 'completed' && Boolean(entry.reason))
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+
+  const latestWorkLog = [...report.workLogs].sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt)
+  )[0];
+
+  const activeEvidenceCount = report.attachments.filter(
+    (attachment) => !attachment.deletedAt
+  ).length;
 
   const anyErrorMessage =
     (triageState.status === 'error' && triageState.message) ||
@@ -146,19 +194,26 @@ export function ReportActionPanel({
   const canTechStart =
     role === 'technician' && isAssignedTech && report.status === 'assigned';
 
+  // A coordinator may return a repair for further work, which puts the report back into the
+  // technician's hands as 'reopened'. The technician must then be able to resume the repair,
+  // place it on hold again, or complete it.
+  const isReopenedForRepair = report.status === 'reopened';
+
   const canTechHold =
-    role === 'technician' && isAssignedTech && report.status === 'in_progress';
+    role === 'technician' && isAssignedTech && (report.status === 'in_progress' || isReopenedForRepair);
 
   const canTechResume =
-    role === 'technician' && isAssignedTech && report.status === 'on_hold';
+    role === 'technician' && isAssignedTech && (report.status === 'on_hold' || isReopenedForRepair);
 
   const canTechComplete =
-    role === 'technician' && isAssignedTech && (report.status === 'in_progress' || report.status === 'on_hold');
+    role === 'technician' &&
+    isAssignedTech &&
+    (report.status === 'in_progress' || report.status === 'on_hold' || isReopenedForRepair);
 
   const canTechLogWork =
     role === 'technician' &&
     isAssignedTech &&
-    (report.status === 'in_progress' || report.status === 'on_hold');
+    (report.status === 'in_progress' || report.status === 'on_hold' || isReopenedForRepair);
 
   const canReporterCancel =
     isReporter && (report.status === 'submitted' || report.status === 'under_review');
@@ -175,6 +230,41 @@ export function ReportActionPanel({
     canTechComplete ||
     canTechLogWork ||
     canReporterCancel;
+
+  // The tab the panel opens on: the one that holds this viewer's next action.
+  const defaultTab = (() => {
+    if (role === 'technician' && isAssignedTech) {
+      if (canTechStart || canTechResume || canTechComplete || canTechHold) return 'tech_work';
+      if (canTechLogWork) return 'work_log';
+    }
+    if (canCoordinatorVerify) return 'verify';
+    if (canCoordinatorTriage) return 'triage';
+    if (canCoordinatorAssign) return 'assign';
+    if (canReporterCancel || canCoordinatorCancel) return 'cancel';
+    return 'overview';
+  })();
+
+  const activeTab = tabOverride?.reportId === report.id ? tabOverride.tab : defaultTab;
+
+  // A short, status-aware note that tells the viewer what the report is waiting for.
+  const nextStepHint = (() => {
+    if (role === 'technician' && isAssignedTech) {
+      return 'Your work order: start the work, log the hours you spent, then complete it with repair notes so the coordinator can verify it.';
+    }
+    if (canCoordinatorVerify) {
+      return 'Inspection step: review the technician\u2019s notes and evidence, then verify the repair or return it for further work.';
+    }
+    if (canCoordinatorTriage) {
+      return 'Step 1 of 2: confirm the priority. Step 2: assign an active technician to the report.';
+    }
+    if (canCoordinatorAssign) {
+      return 'Assign an active technician account to dispatch this report.';
+    }
+    if (canReporterCancel) {
+      return 'This report is waiting for a coordinator to review it and dispatch a technician.';
+    }
+    return null;
+  })();
 
   return (
     <Card className="border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -239,6 +329,12 @@ export function ReportActionPanel({
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            {nextStepHint && (
+              <p className="text-xs text-slate-600 bg-slate-50/70 border border-slate-100 rounded-lg px-3 py-2 leading-relaxed">
+                {nextStepHint}
+              </p>
+            )}
+
             {/* Action Navigation Buttons */}
             <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 rounded-lg text-xs">
               {canCoordinatorTriage && (
@@ -323,8 +419,10 @@ export function ReportActionPanel({
 
             {/* TAB 1: Coordinator Triage */}
             {canCoordinatorTriage && activeTab === 'triage' && (
-              <form action={triageFormAction} className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 flex flex-col gap-3">
+              <form action={triageFormAction} onSubmit={stampRequestToken} className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 flex flex-col gap-3">
                 <input type="hidden" name="reportId" value={report.id} />
+                    <input type="hidden" name="requestId" defaultValue="" />
+                <input type="hidden" name="requestId" defaultValue="" />
 
                 <div>
                   <label htmlFor="confirmedPriority" className="block text-xs font-semibold text-slate-800 mb-1">
@@ -363,8 +461,10 @@ export function ReportActionPanel({
 
             {/* TAB 2: Coordinator Assign / Reassign */}
             {canCoordinatorAssign && activeTab === 'assign' && (
-              <form action={assignFormAction} className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 flex flex-col gap-3">
+              <form action={assignFormAction} onSubmit={stampRequestToken} className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 flex flex-col gap-3">
                 <input type="hidden" name="reportId" value={report.id} />
+                    <input type="hidden" name="requestId" defaultValue="" />
+                <input type="hidden" name="requestId" defaultValue="" />
 
                 {/* Approved Decision 1 Notice */}
                 {report.status === 'in_progress' && (
@@ -457,8 +557,61 @@ export function ReportActionPanel({
                     </p>
                   </div>
                 ) : (
-                  <form action={verifyFormAction} className="flex flex-col gap-3">
+                  <form action={verifyFormAction} onSubmit={stampRequestToken} className="flex flex-col gap-3">
                     <input type="hidden" name="reportId" value={report.id} />
+                    <input type="hidden" name="requestId" defaultValue="" />
+
+                    {/* The coordinator must be able to inspect what the technician actually did
+                        before deciding whether the repair is acceptable. Everything below is
+                        read-only and comes from the report's own real records. */}
+                    <div className="p-3 rounded-lg bg-white border border-slate-200 flex flex-col gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                        Technician&apos;s Reported Work
+                      </span>
+
+                      {latestCompletionNote ? (
+                        <div>
+                          <p className="text-[11px] font-semibold text-slate-700">
+                            Repair completion notes
+                            {latestCompletionNote.changedByName
+                              ? ` — ${latestCompletionNote.changedByName}`
+                              : ''}
+                          </p>
+                          <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-line">
+                            {latestCompletionNote.reason}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500 italic">
+                          No repair completion notes were recorded for this work order.
+                        </p>
+                      )}
+
+                      {latestWorkLog && (
+                        <div>
+                          <p className="text-[11px] font-semibold text-slate-700">
+                            Latest work log
+                            {latestWorkLog.technicianName ? ` — ${latestWorkLog.technicianName}` : ''} ·{' '}
+                            {latestWorkLog.hoursSpent} h
+                          </p>
+                          <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-line">
+                            {latestWorkLog.description}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                        <p className="text-[11px] text-slate-600">
+                          Evidence attachments:{' '}
+                          <strong className="font-semibold text-slate-800">
+                            {activeEvidenceCount}
+                          </strong>
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Open the Attachments tab to inspect the photos.
+                        </p>
+                      </div>
+                    </div>
 
                     <div className="flex flex-col gap-2">
                       <span className="text-xs font-semibold text-slate-800">Inspection Outcome:</span>
@@ -550,8 +703,9 @@ export function ReportActionPanel({
               <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 flex flex-col gap-3">
                 {/* 4A. Start Work */}
                 {canTechStart && (
-                  <form action={transitionFormAction} className="flex flex-col gap-2">
+                  <form action={transitionFormAction} onSubmit={stampRequestToken} className="flex flex-col gap-2">
                     <input type="hidden" name="reportId" value={report.id} />
+                    <input type="hidden" name="requestId" defaultValue="" />
                     <input type="hidden" name="targetStatus" value="in_progress" />
                     <p className="text-xs text-slate-600">
                       Begin active maintenance work on this work order.
@@ -569,8 +723,9 @@ export function ReportActionPanel({
 
                 {/* 4B. Resume Work */}
                 {canTechResume && (
-                  <form action={transitionFormAction} className="flex flex-col gap-2">
+                  <form action={transitionFormAction} onSubmit={stampRequestToken} className="flex flex-col gap-2">
                     <input type="hidden" name="reportId" value={report.id} />
+                    <input type="hidden" name="requestId" defaultValue="" />
                     <input type="hidden" name="targetStatus" value="in_progress" />
                     <p className="text-xs text-slate-600">
                       Resume active work after pause or parts delivery.
@@ -586,18 +741,45 @@ export function ReportActionPanel({
                   </form>
                 )}
 
-                {/* 4C. Complete Work */}
+                {/* 4C. Complete Work — repair completion notes are REQUIRED so the coordinator
+                    can inspect what was actually repaired at verification time. */}
                 {canTechComplete && (
-                  <form action={transitionFormAction} className="flex flex-col gap-2 pt-2 border-t border-slate-200">
+                  <form action={transitionFormAction} onSubmit={stampRequestToken} className="flex flex-col gap-2 pt-2 border-t border-slate-200">
                     <input type="hidden" name="reportId" value={report.id} />
+                    <input type="hidden" name="requestId" defaultValue="" />
                     <input type="hidden" name="targetStatus" value="completed" />
                     <p className="text-xs text-slate-600">
                       Mark repair complete and request Coordinator physical verification.
                     </p>
+                    <label htmlFor="completionNotes" className="block text-xs font-semibold text-slate-800">
+                      Repair Completion Notes <span className="text-rose-500">*</span>
+                    </label>
+                    <textarea
+                      id="completionNotes"
+                      name="reason"
+                      rows={3}
+                      required
+                      minLength={5}
+                      maxLength={500}
+                      value={completionNotes}
+                      onChange={(e) => setCompletionNotes(e.target.value)}
+                      disabled={transitionPending}
+                      placeholder="Describe the repair performed, the parts or materials used, and the checks you carried out..."
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-600 disabled:opacity-60"
+                    />
+                    {transitionState.fieldErrors?.reason && (
+                      <p className="text-xs text-rose-600 font-medium">
+                        {transitionState.fieldErrors.reason}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-slate-500">
+                      Photo evidence is optional. Attach it in the Attachments tab before completing
+                      if the repair needs visual confirmation.
+                    </p>
                     <Button
                       type="submit"
                       variant="primary"
-                      disabled={transitionPending}
+                      disabled={transitionPending || completionNotes.trim().length < 5}
                       className="w-full text-xs bg-emerald-600 hover:bg-emerald-700"
                     >
                       {transitionPending ? 'Completing Work...' : 'Complete Repair (Submit for Verification)'}
@@ -605,39 +787,49 @@ export function ReportActionPanel({
                   </form>
                 )}
 
-                {/* 4D. Put on Hold */}
+                {/* 4D. Needs Further Repair — the work order stays with the technician and the
+                    coordinator is notified that more repair is outstanding. A reason is required
+                    so the coordinator can see what still has to be done. */}
                 {canTechHold && (
-                  <form action={transitionFormAction} className="flex flex-col gap-2 pt-2 border-t border-slate-200">
+                  <form action={transitionFormAction} onSubmit={stampRequestToken} className="flex flex-col gap-2 pt-2 border-t border-slate-200">
                     <input type="hidden" name="reportId" value={report.id} />
+                    <input type="hidden" name="requestId" defaultValue="" />
                     <input type="hidden" name="targetStatus" value="on_hold" />
                     <label htmlFor="holdReason" className="block text-xs font-semibold text-slate-800">
-                      Hold Reason <span className="text-rose-500">*</span>
+                      Further Repair Reason <span className="text-rose-500">*</span>
                     </label>
-                    <input
+                    <textarea
                       id="holdReason"
                       name="reason"
-                      type="text"
+                      rows={2}
                       required
+                      minLength={5}
+                      maxLength={500}
                       value={holdReason}
                       onChange={(e) => setHoldReason(e.target.value)}
                       disabled={transitionPending}
-                      placeholder="e.g. Awaiting replacement valve from supplier"
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                      placeholder="e.g. Awaiting replacement valve from supplier; further repair still outstanding..."
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-600 disabled:opacity-60"
                     />
+                    {transitionState.fieldErrors?.reason && (
+                      <p className="text-xs text-rose-600 font-medium">
+                        {transitionState.fieldErrors.reason}
+                      </p>
+                    )}
                     <Button
                       type="submit"
                       variant="secondary"
-                      disabled={transitionPending || !holdReason.trim()}
+                      disabled={transitionPending || holdReason.trim().length < 5}
                       className="w-full text-xs"
                     >
-                      {transitionPending ? 'Putting on Hold...' : 'Pause Work (Put On Hold)'}
+                      {transitionPending ? 'Recording...' : 'Needs Further Repair (Put Work On Hold)'}
                     </Button>
                   </form>
                 )}
 
                 {/* 4E. Decline Assignment */}
                 {canTechDecline && (
-                  <form action={declineFormAction} className="flex flex-col gap-2 pt-2 border-t border-rose-200">
+                  <form action={declineFormAction} onSubmit={stampRequestToken} className="flex flex-col gap-2 pt-2 border-t border-rose-200">
                     <input type="hidden" name="assignmentId" value={activeAssignment?.id || ''} />
                     <label htmlFor="declineReason" className="block text-xs font-semibold text-rose-900">
                       Decline Work Order <span className="text-rose-600">* (Reason Required)</span>
@@ -673,7 +865,7 @@ export function ReportActionPanel({
 
             {/* TAB 5: Technician Work Log */}
             {canTechLogWork && activeTab === 'work_log' && (
-              <form action={workLogFormAction} className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 flex flex-col gap-3">
+              <form action={workLogFormAction} onSubmit={stampRequestToken} className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 flex flex-col gap-3">
                 <input type="hidden" name="assignmentId" value={activeAssignment?.id || ''} />
 
                 <div>
@@ -735,8 +927,9 @@ export function ReportActionPanel({
 
             {/* TAB 6: Cancellation (Reporter or Coordinator) */}
             {(canCoordinatorCancel || canReporterCancel) && activeTab === 'cancel' && (
-              <form action={transitionFormAction} className="p-4 rounded-xl border border-rose-200 bg-rose-50/40 flex flex-col gap-3">
+              <form action={transitionFormAction} onSubmit={stampRequestToken} className="p-4 rounded-xl border border-rose-200 bg-rose-50/40 flex flex-col gap-3">
                 <input type="hidden" name="reportId" value={report.id} />
+                    <input type="hidden" name="requestId" defaultValue="" />
                 <input type="hidden" name="targetStatus" value="cancelled" />
 
                 <div>

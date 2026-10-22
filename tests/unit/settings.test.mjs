@@ -25,8 +25,8 @@ const myAppRoot = path.resolve(__dirname, '../..');
 const users = [
   mapSettingsUser({
     id: 'user-1',
-    full_name: 'Alex Morgan',
-    email: 'alex@example.edu',
+    full_name: 'Rina Bautista',
+    email: 'rina.bautista@example.edu',
     role: 'administrator',
     is_active: true,
     phone: '+63-900-000-0000',
@@ -43,10 +43,14 @@ const users = [
 test('Settings transforms: user directory maps only displayed fields and safe missing values', () => {
   assert.deepEqual(users[0], {
     id: 'user-1',
-    fullName: 'Alex Morgan',
-    email: 'alex@example.edu',
+    fullName: 'Rina Bautista',
+    email: 'rina.bautista@example.edu',
     role: 'administrator',
     isActive: true,
+    // Phase 4E: the auth-account linkage status is part of the mapped contract. It stays
+    // `null` when the linkage could not be read, so the UI never claims a status it does
+    // not know.
+    hasAuthAccount: null,
   });
   assert.equal('phone' in users[0], false);
   assert.deepEqual(mapSettingsUser({}), {
@@ -55,16 +59,17 @@ test('Settings transforms: user directory maps only displayed fields and safe mi
     email: 'Email unavailable',
     role: 'student_personnel',
     isActive: false,
+    hasAuthAccount: null,
   });
 });
 
 test('Settings transforms: directory filter matches name, email, role, and account status', () => {
-  assert.deepEqual(filterSettingsUsers(users, 'alex').map((user) => user.id), ['user-1']);
+  assert.deepEqual(filterSettingsUsers(users, 'rina').map((user) => user.id), ['user-1']);
   assert.deepEqual(filterSettingsUsers(users, '@example.edu').map((user) => user.id), ['user-1', 'user-2']);
   assert.deepEqual(filterSettingsUsers(users, 'technician').map((user) => user.id), ['user-2']);
   assert.deepEqual(filterSettingsUsers(users, 'inactive').map((user) => user.id), ['user-2']);
   assert.deepEqual(filterSettingsUsers(users, 'nobody'), []);
-  assert.deepEqual(filterSettingsUsers([], 'alex'), []);
+  assert.deepEqual(filterSettingsUsers([], 'rina'), []);
 });
 
 test('Settings user directory: exact count accepts complete and empty results only', () => {
@@ -80,8 +85,8 @@ test('Settings user directory: over-limit and query-error results hide all parti
     [
       {
         id: 'user-1',
-        full_name: 'Alex Morgan',
-        email: 'alex@example.edu',
+        full_name: 'Rina Bautista',
+        email: 'rina.bautista@example.edu',
         role: 'administrator',
         is_active: true,
       },
@@ -126,8 +131,8 @@ test('Settings DAL runtime: returns complete directory and audit data from bound
       data: [
         {
           id: 'user-1',
-          full_name: 'Alex Morgan',
-          email: 'alex@example.edu',
+          full_name: 'Rina Bautista',
+          email: 'rina.bautista@example.edu',
           role: 'administrator',
           is_active: true,
         },
@@ -143,7 +148,7 @@ test('Settings DAL runtime: returns complete directory and audit data from bound
           new_role: 'technician',
           created_at: '2026-10-20T04:00:00.000Z',
           affected_user: { full_name: 'Taylor Chen' },
-          changed_by_user: { full_name: 'Alex Morgan' },
+          changed_by_user: { full_name: 'Rina Bautista' },
         },
       ],
       count: null,
@@ -215,13 +220,13 @@ test('Settings transforms: role-change audit maps actual related names and safe 
     new_role: 'technician',
     created_at: '2026-10-20T04:00:00.000Z',
     affected_user: { full_name: 'Taylor Chen' },
-    changed_by_user: [{ full_name: 'Alex Morgan' }],
+    changed_by_user: [{ full_name: 'Rina Bautista' }],
   });
 
   assert.deepEqual(entry, {
     id: 'audit-1',
     affectedUserName: 'Taylor Chen',
-    actorName: 'Alex Morgan',
+    actorName: 'Rina Bautista',
     oldRole: 'student_personnel',
     newRole: 'technician',
     createdAt: '2026-10-20T04:00:00.000Z',

@@ -192,6 +192,92 @@ export function isDateInPhilippineWeek(
  *   ignoring declined or reassigned records when active work exists.
  * - Missing relations fail gracefully with safe fallback labels.
  */
+/**
+ * The embedded to-many relations of a report row.
+ *
+ * PostgREST embeds a to-many relation with a LEFT JOIN, so a report with several child rows
+ * is returned once per (parent × child) combination. The rows therefore have to be merged
+ * back into a single report before they are transformed.
+ */
+const REPORT_TO_MANY_RELATIONS = [
+  'assignments',
+  'report_status_history',
+  'verifications',
+  'report_attachments',
+] as const;
+
+function mergeChildCollections(
+  target: Record<string, unknown>,
+  incoming: Record<string, unknown>
+): void {
+  for (const relation of REPORT_TO_MANY_RELATIONS) {
+    const incomingItems = incoming[relation];
+    if (!Array.isArray(incomingItems)) continue;
+
+    const currentItems = Array.isArray(target[relation])
+      ? (target[relation] as Array<Record<string, unknown>>)
+      : [];
+    const seen = new Set(
+      currentItems
+        .map((item) => item?.id)
+        .filter((id): id is string => typeof id === 'string')
+    );
+
+    for (const item of incomingItems as Array<Record<string, unknown>>) {
+      const id = item?.id;
+      if (typeof id === 'string' && seen.has(id)) {
+        // The same child appears in several rows of the cartesian product. Merge the child's
+        // own nested collection (an assignment carries its work logs).
+        const existing = currentItems.find((candidate) => candidate?.id === id);
+        if (existing && Array.isArray(item.work_logs) && Array.isArray(existing.work_logs)) {
+          const nestedSeen = new Set(
+            (existing.work_logs as Array<Record<string, unknown>>)
+              .map((log) => log?.id)
+              .filter((logId): logId is string => typeof logId === 'string')
+          );
+          for (const log of item.work_logs as Array<Record<string, unknown>>) {
+            if (typeof log?.id === 'string' && nestedSeen.has(log.id)) continue;
+            (existing.work_logs as Array<Record<string, unknown>>).push(log);
+            if (typeof log?.id === 'string') nestedSeen.add(log.id);
+          }
+        }
+        continue;
+      }
+      currentItems.push(item);
+      if (typeof id === 'string') seen.add(id);
+    }
+
+    target[relation] = currentItems;
+  }
+}
+
+/**
+ * Merges the rows PostgREST returns for one report into a single row.
+ *
+ * Without this, a report that has more than one assignment (for example after a
+ * reassignment) is listed several times in the report queue, and the report DETAIL query
+ * fails outright with "JSON object requested, multiple (or no) rows returned".
+ */
+export function mergeReportRows<T extends { id: string }>(rows: T[]): T[] {
+  if (!Array.isArray(rows) || rows.length <= 1) return rows ?? [];
+
+  const byId = new Map<string, T>();
+  for (const row of rows) {
+    if (!row || typeof row.id !== 'string') continue;
+    const existing = byId.get(row.id);
+    if (!existing) {
+      byId.set(row.id, row);
+      continue;
+    }
+    mergeChildCollections(
+      existing as unknown as Record<string, unknown>,
+      row as unknown as Record<string, unknown>
+    );
+  }
+
+  return [...byId.values()];
+}
+
 export function transformDbReportToMaintenanceReport(row: RawDbReportRow): MaintenanceReport {
   let activeAssignment: RawDbReportRow['assignments'] extends (infer T)[] | null | undefined
     ? T | undefined
@@ -631,7 +717,20 @@ export function describeDatabaseError(error: unknown): string | null {
     return 'The submitted details violate a campus maintenance data rule. Please review the form and try again.';
   }
 
-  // Authorization / row level security
+  // Database-side function/policy evaluation failure.
+  //
+  // NOTE: a failing RLS *policy helper* is not the same thing as a permission denial.
+  // `public.can_view_report()` is a PL/pgSQL function whose body can raise a database-side
+  // error; PostgREST then surfaces that error instead of a genuine authorization refusal.
+  // PostgreSQL code 42702 is `ambiguous_column`, which is what a PL/pgSQL parameter that
+  // collides with a column name raises. The message check must run BEFORE the 42501 branch
+  // so the notice stays accurate.
+  if (
+    code === '42702' ||
+    /column reference .* is ambiguous|ambiguous column|invalid reference to/i.test(message)
+  ) {
+    return 'The database could not evaluate the report visibility rule, so report data cannot be displayed right now. Please contact the system administrator.';
+  }
   if (code === '42501') {
     return 'You do not have permission to perform this action.';
   }

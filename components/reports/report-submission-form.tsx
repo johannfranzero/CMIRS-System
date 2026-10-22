@@ -71,6 +71,20 @@ export function ReportSubmissionForm({
   // Keyed by report id so a brand new submission always shows its own success screen.
   const [dismissedReportId, setDismissedReportId] = useState<string | null>(null);
 
+  // Idempotency token for the notification-bearing submission command (Phase 4C, S-03).
+  //
+  // The token is minted on the first submit of an attempt and reused for every retry of that
+  // attempt, so a double submit or a retry after a dropped response is answered by the
+  // database as a REPLAY of the original command instead of creating a second report.
+  // It is cleared once the action settles, so the next report is a new command.
+  // The value is written straight to the hidden input (uncontrolled) to keep the server
+  // rendered markup stable.
+  const requestTokenRef = useRef<string>('');
+  useEffect(() => {
+    // The action has settled: the next submission attempt must use a fresh token.
+    requestTokenRef.current = '';
+  }, [state]);
+
   // Reference catalogs are mandatory for a valid submission. If either catalog failed to load
   // from the database we must not let the user submit a report against a stale/empty list.
   const referenceDataUnavailable = Boolean(categoriesError || locationsError);
@@ -235,6 +249,15 @@ export function ReportSubmissionForm({
       return;
     }
 
+    // Attach the idempotency token for this submission attempt.
+    if (!requestTokenRef.current) {
+      requestTokenRef.current = globalThis.crypto.randomUUID();
+    }
+    const tokenField = e.currentTarget.elements.namedItem('requestId');
+    if (tokenField instanceof HTMLInputElement) {
+      tokenField.value = requestTokenRef.current;
+    }
+
     submissionLockedRef.current = true;
     setClientErrors({});
   };
@@ -396,6 +419,8 @@ export function ReportSubmissionForm({
         )}
 
         <form action={formAction} onSubmit={handleClientValidation} className="flex flex-col gap-6">
+        {/* Idempotency token for the notification-bearing submission command. */}
+        <input type="hidden" name="requestId" defaultValue="" />
           {/* Title Field */}
           <div>
             <label htmlFor="title" className="block text-sm font-semibold text-slate-800 mb-1.5">
@@ -592,18 +617,16 @@ export function ReportSubmissionForm({
                 Supported formats: JPG, PNG, WebP (10MB max per file)
               </p>
 
-              <label className="mt-3 cursor-pointer">
+              {/* The file input is intentionally NOT a descendant of the <form> element.
+                  A file control inside a form is submitted with the form, which would post the
+                  photo bytes (up to 10 MB each) to the report-submission Server Action and
+                  exceed the Server Action body-size limit. The selected files are held in React
+                  state and uploaded separately, one file per request, by
+                  `uploadReportAttachmentAction` after the report has been created. */}
+              <label htmlFor="report-photo-input" className="mt-3 cursor-pointer">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors">
                   Choose Image Files
                 </span>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/png,image/webp"
-                  disabled={isPending || isUploadingAttachments}
-                  onChange={handleFileChange}
-                  className="sr-only"
-                />
               </label>
             </div>
 
@@ -671,6 +694,22 @@ export function ReportSubmissionForm({
             </Button>
           </div>
         </form>
+
+        {/* The photo picker lives OUTSIDE the report-submission form on purpose. A file control
+            inside a form is submitted together with the form, so the selected photo bytes would
+            be posted to the report-submission Server Action and exceed the Server Action
+            body-size limit. The selected files are held in React state and uploaded one file per
+            request by `uploadReportAttachmentAction` once the report has been created. */}
+        <input
+          id="report-photo-input"
+          type="file"
+          multiple
+          accept="image/jpeg,image/png,image/webp"
+          disabled={isPending || isUploadingAttachments}
+          onChange={handleFileChange}
+          className="sr-only"
+          aria-label="Select photos to attach to this maintenance request"
+        />
       </CardContent>
     </Card>
   );

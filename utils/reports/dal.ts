@@ -22,6 +22,7 @@ import {
   RawDbReportDetailRow,
   transformDbReportToMaintenanceReport,
   transformDbReportToDetailedReport,
+  mergeReportRows,
   calculateKpiStatsFromDbReports,
   getFacilityBreakdownFromReports,
   getPhilippineWeekBounds,
@@ -58,6 +59,7 @@ export {
   type DetailedReport,
   transformDbReportToMaintenanceReport,
   transformDbReportToDetailedReport,
+  mergeReportRows,
   calculateKpiStatsFromDbReports,
   getFacilityBreakdownFromReports,
   getPhilippineWeekBounds,
@@ -199,7 +201,14 @@ export async function getReportsQueue(
     const { data, count, error } = await query;
 
     if (error) {
-      console.error('[DAL] getReportsQueue query error:', error.message);
+      console.error(
+        '[DAL] getReportsQueue query error:',
+        error.message,
+        '| code=',
+        (error as { code?: string }).code ?? 'unknown',
+        '| status=',
+        (error as { status?: number }).status ?? 'unknown'
+      );
       return {
         reports: [],
         totalCount: 0,
@@ -208,11 +217,17 @@ export async function getReportsQueue(
         totalPages: 0,
         hasMore: false,
         isLiveData: true,
-        error: 'Unable to retrieve maintenance reports from the database. Please try again shortly.',
+        error:
+          describeDatabaseError(error) ??
+          'Unable to retrieve maintenance reports from the database. Please try again shortly.',
       };
     }
 
-    const transformedReports = (data || []).map((row) =>
+    // PostgREST returns one row per (report × embedded child) combination. Merge the rows
+    // back into one row per report so a reassigned report is not listed several times.
+    const mergedRows = mergeReportRows((data || []) as unknown as RawDbReportRow[]);
+
+    const transformedReports = mergedRows.map((row) =>
       transformDbReportToMaintenanceReport(row as unknown as RawDbReportRow)
     );
     const totalCount = count ?? transformedReports.length;
@@ -286,7 +301,14 @@ export async function getDashboardKpiStats(): Promise<DashboardKpiResult> {
     const { data, count, error } = await query;
 
     if (error) {
-      console.error('[DAL] getDashboardKpiStats query error:', error.message);
+      console.error(
+        '[DAL] getDashboardKpiStats query error:',
+        error.message,
+        '| code=',
+        (error as { code?: string }).code ?? 'unknown',
+        '| status=',
+        (error as { status?: number }).status ?? 'unknown'
+      );
       return {
         stats: {
           totalActive: 0,
@@ -296,7 +318,9 @@ export async function getDashboardKpiStats(): Promise<DashboardKpiResult> {
           urgentHazards: 0,
         },
         isLiveData: true,
-        error: 'Unable to calculate operational metrics from the database. Please try again shortly.',
+        error:
+          describeDatabaseError(error) ??
+          'Unable to calculate operational metrics from the database. Please try again shortly.',
       };
     }
 
@@ -694,18 +718,35 @@ export async function getReportDetails(id: string): Promise<ReportDetailResult> 
       query = query.eq('reporter_id', user.id);
     }
 
-    const { data, error } = await query.maybeSingle();
+    // PostgREST embeds the report's child relations with a LEFT JOIN, so a report with more
+    // than one assignment / work log / attachment / history row is returned once per
+    // (report × child) combination. `maybeSingle()` would reject that with
+    // "JSON object requested, multiple (or no) rows returned", so the rows are fetched and
+    // merged back into exactly one report row.
+    const { data, error } = await query;
 
     if (error) {
-      console.warn('[DAL] getReportDetails query error:', error.message);
+      console.warn(
+        '[DAL] getReportDetails query error:',
+        error.message,
+        '| code=',
+        (error as { code?: string }).code ?? 'unknown',
+        '| status=',
+        (error as { status?: number }).status ?? 'unknown'
+      );
       return {
         report: null,
         isLiveData: true,
-        error: 'Unable to retrieve report details from the database.',
+        error:
+          describeDatabaseError(error) ??
+          'Unable to retrieve report details from the database.',
       };
     }
 
-    if (!data) {
+    const mergedRows = mergeReportRows((data || []) as unknown as RawDbReportDetailRow[]);
+    const detailRow = mergedRows[0];
+
+    if (!detailRow) {
       return {
         report: null,
         isLiveData: true,
@@ -713,7 +754,7 @@ export async function getReportDetails(id: string): Promise<ReportDetailResult> 
       };
     }
 
-    const report = transformDbReportToDetailedReport(data as unknown as RawDbReportDetailRow);
+    const report = transformDbReportToDetailedReport(detailRow as unknown as RawDbReportDetailRow);
 
     // Defense-in-depth: Final role visibility verification
     if (user.profile.role === 'student_personnel' && report.reporterId && report.reporterId !== user.id) {

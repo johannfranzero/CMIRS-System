@@ -22,7 +22,7 @@ import {
   getCampusFacilityBreakdown,
 } from '@/utils/reports/dal';
 import { getRoleDashboardConfig } from '@/utils/reports/dashboard-config';
-import { formatRoleLabel } from '@/utils/auth/validation';
+import { canSubmitReport } from '@/types/auth';
 
 export const instant = false;
 
@@ -50,39 +50,11 @@ export default async function DashboardPage() {
   return (
     <AppShell user={user} pageTitle="Operations Dashboard">
       <div className="flex flex-col gap-6">
-        {/* Live Data Connection Banner with Active Role Perspective */}
-        {!kpiResult.error && !queueResult.error ? (
-          <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm">
-            <div className="flex items-center gap-2.5 text-emerald-950">
-              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse shrink-0" />
-              <p>
-                <strong className="font-semibold text-emerald-900">Live Backend Connected:</strong> Serving records from Supabase Cloud. PostgreSQL Row Level Security actively enforces your role scope.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                Perspective: {formatRoleLabel(role)}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-white text-emerald-700 border border-emerald-200">
-                Live RLS Active
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-amber-50/90 border border-amber-200 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm">
-            <div className="flex items-center gap-2.5 text-amber-950">
-              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-              <p>
-                <strong className="font-semibold text-amber-900">Database Service Notice:</strong> Operational queries experienced a degraded state. Fail-closed security protection active.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
-                Degraded State
-              </span>
-            </div>
-          </div>
-        )}
+        {/* Phase 4D.1: the previous "Live Backend Connected / Live RLS Active" banner was
+            removed. It asserted a verified connection state that the server component cannot
+            actually prove (a successful query may still return zero rows, and RLS filtering is
+            enforced in the database, not reported by the client). The per-query error notice
+            below surfaces the real, sanitized failure when a query does fail. */}
 
         {/* Database Query Warning / Notice if present (Sanitized) */}
         {(kpiResult.error || queueResult.error || facilityResult.error) && (
@@ -106,18 +78,25 @@ export default async function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2.5">
-            <Link href="/reports/new">
-              <Button
-                variant="primary"
-                leftIcon={<PlusCircleIcon className="w-4 h-4" />}
-              >
-                Submit Report
-              </Button>
-            </Link>
+            {/* Only the reporter roles may file a maintenance report (Phase 4H). The
+                authorization is enforced on the server in the `submitReportAction` Server
+                Action and the `/reports/new` route; this is the usability affordance. */}
+            {canSubmitReport(role) && (
+              <Link href="/reports/new">
+                <Button
+                  variant="primary"
+                  leftIcon={<PlusCircleIcon className="w-4 h-4" />}
+                >
+                  Submit Report
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 
-        {/* Metric KPI Cards Derived Strictly from Visible Reports */}
+        {/* Metric KPI Cards Derived Strictly from Visible Reports.
+            Phase 4D.2: when the KPI query failed the metrics are UNKNOWN, so the cards render
+            an "Unavailable" state instead of a misleading 0. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             title={dashboardConfig.cards[0].title}
@@ -125,6 +104,7 @@ export default async function DashboardPage() {
             description={dashboardConfig.cards[0].description}
             icon={<ReportsIcon size={20} className="w-5 h-5 text-indigo-600 shrink-0" />}
             variant="default"
+            unavailable={Boolean(kpiResult.error)}
           />
 
           <StatCard
@@ -133,6 +113,7 @@ export default async function DashboardPage() {
             description={dashboardConfig.cards[1].description}
             icon={<ClockIcon size={20} className="w-5 h-5 text-amber-600 shrink-0" />}
             variant="amber"
+            unavailable={Boolean(kpiResult.error)}
           />
 
           <StatCard
@@ -141,6 +122,7 @@ export default async function DashboardPage() {
             description={dashboardConfig.cards[2].description}
             icon={<WrenchIcon size={20} className="w-5 h-5 text-blue-600 shrink-0" />}
             variant="blue"
+            unavailable={Boolean(kpiResult.error)}
           />
 
           <StatCard
@@ -149,7 +131,8 @@ export default async function DashboardPage() {
             description={dashboardConfig.cards[3].description}
             icon={<ExclamationTriangleIcon size={20} className="w-5 h-5 text-rose-600 shrink-0" />}
             variant="rose"
-            urgentAlert={stats.urgentHazards > 0}
+            urgentAlert={!kpiResult.error && stats.urgentHazards > 0}
+            unavailable={Boolean(kpiResult.error)}
           />
         </div>
 
@@ -176,7 +159,24 @@ export default async function DashboardPage() {
               </Link>
             </div>
 
-            <ReportList reports={liveReports} userRole={role} />
+            <ReportList
+              reports={liveReports}
+              userRole={role}
+              error={queueResult.error}
+              totalCount={queueResult.totalCount}
+            />
+
+            {/* Phase 4D.2: make a truncated page visible instead of implying it is the whole set */}
+            {!queueResult.error && queueResult.totalCount > liveReports.length && (
+              <p className="text-xs text-slate-500">
+                Showing the {liveReports.length} most recent of {queueResult.totalCount} reports
+                visible to your role.{' '}
+                <Link href="/reports" className="text-indigo-600 hover:text-indigo-800 font-semibold">
+                  View the full queue
+                </Link>
+                .
+              </p>
+            )}
           </div>
 
           {/* Side Widgets (1 Column on Large Screens) */}
@@ -252,7 +252,9 @@ export default async function DashboardPage() {
                     <strong className="text-slate-800">Urgent Safety Hazards:</strong> Flag issues involving water leaks near electrical panels, broken emergency exits, or fire risks for immediate priority triage.
                   </p>
                   <p className="text-slate-500 pt-1 border-t border-slate-100">
-                    Coordinator assessment typically occurs within 2 hours of report submission during campus operating hours.
+                    Reports enter the coordinator triage queue as <strong className="text-slate-700">Submitted</strong>.
+                    A coordinator confirms the priority before a technician is assigned. Response-time targets are not
+                    measured by the system, so no turnaround estimate is shown here.
                   </p>
                 </CardContent>
               </Card>

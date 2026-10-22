@@ -2,6 +2,7 @@ import type { AnalyticsDataResult } from '../../types/reports';
 import {
   calculateOperationalAnalytics,
   isAnalyticsDatasetComplete,
+  describeDatabaseError,
   type RawAnalyticsReport,
 } from './transform.ts';
 
@@ -64,7 +65,9 @@ export async function getOperationalAnalyticsFromClient(
         state: 'error',
         totalCount: null,
         fetchedCount: 0,
-        error: 'Operational analytics are temporarily unavailable. Please try again shortly.',
+        error:
+          describeDatabaseError(error) ??
+          'Operational analytics are temporarily unavailable. Please try again shortly.',
       };
     }
 

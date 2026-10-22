@@ -39,6 +39,33 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 /**
+ * The roles that are permitted to SUBMIT a new maintenance report.
+ *
+ * Authority:
+ *   * `docs/ROLES.md` — "Submit new report": Student / Personnel ✅, Coordinator ✅,
+ *     Administrator —, Management — (pending decision PD-R6, "currently marked as not permitted").
+ *   * The Maintenance Technician role is an operational repair role
+ *     ("Inspect and perform assigned repairs"); the owner has confirmed that a technician must
+ *     not be a reporter, so the matrix row for the technician is withdrawn.
+ *
+ * This list is enforced on the server (the `submitReportAction` Server Action and the
+ * `/reports/new` route) and mirrored in the navigation and the dashboard call to action.
+ * It is not a UI-only restriction.
+ */
+export const REPORT_SUBMITTER_ROLES: readonly UserRole[] = [
+  'student_personnel',
+  'coordinator',
+] as const;
+
+/**
+ * Returns true when the role may submit a new maintenance report.
+ */
+export function canSubmitReport(role: UserRole | string | null | undefined): boolean {
+  if (!role) return false;
+  return (REPORT_SUBMITTER_ROLES as readonly string[]).includes(role);
+}
+
+/**
  * Formats a role value into a human-readable display label.
  */
 export function formatRoleLabel(role: UserRole | string | undefined | null): string {

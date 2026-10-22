@@ -32,6 +32,7 @@ import {
   validateVerificationInput,
 } from './validation.ts';
 import { sanitizeErrorMessage } from './transform.ts';
+import { invokeLifecycleRpc, resolveRequestId } from './lifecycle-rpc.ts';
 
 /**
  * Execution context allowing dependency injection for unit testing and server action pipelines.
@@ -39,6 +40,12 @@ import { sanitizeErrorMessage } from './transform.ts';
 export interface MutationContext {
   supabase?: SupabaseClient;
   user?: AuthenticatedUser | null;
+  /**
+   * Idempotency token for the notification-bearing command RPCs (Phase 4C, S-03).
+   * The client supplies it so that a retry of the same user action returns the original
+   * result instead of creating a second report, assignment, or notification.
+   */
+  requestId?: string;
 }
 
 /**
@@ -102,37 +109,40 @@ export async function createReportRecord(
   }
 
   try {
-    // 3. Insert report record
-    const { data, error } = await supabase
-      .from('reports')
-      .insert({
-        title: validation.data.title,
-        description: validation.data.description,
-        category_id: validation.data.categoryId,
-        location_id: validation.data.locationId,
-        is_urgent_hazard: validation.data.isUrgentHazard,
-        reporter_id: user.id,
-        status: 'submitted',
-        confirmed_priority: null,
-      })
-      .select('id, report_number, status, created_at')
-      .single();
+    // 3. Execute the notification-bearing submission command.
+    //    The command mutates the report and creates the coordinator notifications in ONE
+    //    database transaction (Phase 4C, S-01). `p_request_id` makes a retry of the same
+    //    user action return the original report instead of creating a second one (S-03).
+    const outcome = await invokeLifecycleRpc<{
+      report_id: string;
+      report_number: string;
+      status: string;
+      created_at: string;
+    }>(
+      supabase,
+      'submit_report_with_notifications',
+      {
+        p_title: validation.data.title,
+        p_description: validation.data.description,
+        p_category_id: validation.data.categoryId,
+        p_location_id: validation.data.locationId,
+        p_is_urgent_hazard: validation.data.isUrgentHazard,
+        p_request_id: resolveRequestId(context?.requestId ?? input),
+      },
+      'Failed to create maintenance report.'
+    );
 
-    if (error || !data) {
-      console.error('[createReportRecord] PostgREST insert error:', error);
-      return {
-        success: false,
-        error: sanitizeErrorMessage(error, 'Failed to create maintenance report.'),
-      };
+    if (!outcome.ok) {
+      return { success: false, error: outcome.error };
     }
 
     return {
       success: true,
       data: {
-        id: data.id,
-        reportNumber: data.report_number,
-        status: data.status as ReportStatus,
-        createdAt: data.created_at,
+        id: outcome.data.report_id,
+        reportNumber: outcome.data.report_number,
+        status: outcome.data.status as ReportStatus,
+        createdAt: outcome.data.created_at,
       },
     };
   } catch (err) {
@@ -188,31 +198,35 @@ export async function triageReportRecord(
   }
 
   try {
-    // 3. Update report with confirmed priority and triage status
-    const { data, error } = await supabase
-      .from('reports')
-      .update({
-        confirmed_priority: validation.data.confirmedPriority,
-        status: validation.data.status,
-      })
-      .eq('id', validation.data.reportId)
-      .select('id, status, confirmed_priority')
-      .single();
+    // 3. Execute the notification-bearing triage command.
+    //    Triage advances the report to 'under_review' only; the assignment command owns
+    //    'assigned' (approved decision P-04).
+    const outcome = await invokeLifecycleRpc<{
+      report_id: string;
+      status: string;
+      confirmed_priority: string;
+    }>(
+      supabase,
+      'triage_report_with_notifications',
+      {
+        p_report_id: validation.data.reportId,
+        p_confirmed_priority: validation.data.confirmedPriority,
+        p_target_status: validation.data.status,
+        p_request_id: resolveRequestId(context?.requestId ?? input),
+      },
+      'Failed to update report triage status.'
+    );
 
-    if (error || !data) {
-      console.error('[triageReportRecord] PostgREST update error:', error);
-      return {
-        success: false,
-        error: sanitizeErrorMessage(error, 'Failed to update report triage status.'),
-      };
+    if (!outcome.ok) {
+      return { success: false, error: outcome.error };
     }
 
     return {
       success: true,
       data: {
-        id: data.id,
-        status: data.status as ReportStatus,
-        confirmedPriority: data.confirmed_priority as PriorityLevel,
+        id: outcome.data.report_id,
+        status: outcome.data.status as ReportStatus,
+        confirmedPriority: outcome.data.confirmed_priority as PriorityLevel,
       },
     };
   } catch (err) {
@@ -270,109 +284,39 @@ export async function assignTechnicianToReport(
   }
 
   try {
-    // 3. Verify target technician profile is active and has role 'technician'
-    const { data: techProfile, error: techError } = await supabase
-      .from('profiles')
-      .select('id, role, is_active')
-      .eq('id', validation.data.technicianId)
-      .single();
+    // 3. Execute the notification-bearing assignment command.
+    //    The command locks the report and its active assignments, rejects a duplicate
+    //    dispatch to the already-active technician (approved decision P-05), marks the
+    //    previous assignment 'reassigned', creates the new assignment, moves the report to
+    //    'assigned', and delivers the assignment notification — all in one transaction.
+    const outcome = await invokeLifecycleRpc<{
+      assignment_id: string;
+      report_id: string;
+      technician_id: string;
+      status: string;
+      was_reassignment: boolean;
+    }>(
+      supabase,
+      'assign_or_reassign_report_with_notifications',
+      {
+        p_report_id: validation.data.reportId,
+        p_technician_id: validation.data.technicianId,
+        p_notes: validation.data.notes ?? null,
+        p_request_id: resolveRequestId(context?.requestId ?? input),
+      },
+      'Failed to create technician assignment.'
+    );
 
-    if (techError || !techProfile) {
-      return {
-        success: false,
-        error: 'The selected technician profile could not be found.',
-      };
-    }
-
-    if (!techProfile.is_active || techProfile.role !== 'technician') {
-      return {
-        success: false,
-        error: 'The assigned user must be an active Maintenance Technician.',
-      };
-    }
-
-    // 4. Verify target report is in an assignable (non-terminal) state
-    const { data: report, error: reportError } = await supabase
-      .from('reports')
-      .select('id, status, reporter_id')
-      .eq('id', validation.data.reportId)
-      .single();
-
-    if (reportError || !report) {
-      return {
-        success: false,
-        error: 'Report not found.',
-      };
-    }
-
-    if (report.status === 'verified' || report.status === 'cancelled') {
-      return {
-        success: false,
-        error: 'Cannot assign a technician to a verified or cancelled report.',
-      };
-    }
-
-    // 5. Reassignment Handling: Mark existing active assignments as 'reassigned'
-    const { error: reassignError } = await supabase
-      .from('assignments')
-      .update({ status: 'reassigned' })
-      .eq('report_id', validation.data.reportId)
-      .in('status', ['assigned', 'in_progress', 'on_hold']);
-
-    if (reassignError) {
-      console.error('[assignTechnicianToReport] Error updating previous assignments:', reassignError);
-      return {
-        success: false,
-        error: sanitizeErrorMessage(reassignError, 'Failed to update prior technician assignment.'),
-      };
-    }
-
-    // 6. Create new assignment row
-    const { data: newAssignment, error: insertError } = await supabase
-      .from('assignments')
-      .insert({
-        report_id: validation.data.reportId,
-        technician_id: validation.data.technicianId,
-        assigned_by: user.id,
-        status: 'assigned',
-        notes: validation.data.notes ?? null,
-      })
-      .select('id, report_id, technician_id, status')
-      .single();
-
-    if (insertError || !newAssignment) {
-      console.error('[assignTechnicianToReport] Error inserting new assignment:', insertError);
-      return {
-        success: false,
-        error: sanitizeErrorMessage(insertError, 'Failed to create technician assignment.'),
-      };
-    }
-
-    // 7. Update report status to 'assigned' (Reverts 'in_progress' to 'assigned' per Decision 1)
-    if (report.status !== 'assigned') {
-      const { error: reportUpdateError } = await supabase
-        .from('reports')
-        .update({ status: 'assigned' })
-        .eq('id', validation.data.reportId);
-
-      if (reportUpdateError) {
-        console.error('[assignTechnicianToReport] Partial failure: Failed to update report status:', reportUpdateError);
-        return {
-          success: false,
-          error: sanitizeErrorMessage(
-            reportUpdateError,
-            'Technician assigned, but failed to update report lifecycle status to assigned.'
-          ),
-        };
-      }
+    if (!outcome.ok) {
+      return { success: false, error: outcome.error };
     }
 
     return {
       success: true,
       data: {
-        assignmentId: newAssignment.id,
-        reportId: newAssignment.report_id,
-        technicianId: newAssignment.technician_id,
+        assignmentId: outcome.data.assignment_id,
+        reportId: outcome.data.report_id,
+        technicianId: outcome.data.technician_id,
         status: 'assigned',
       },
     };
@@ -481,9 +425,15 @@ export async function transitionReportStatusRecord(
   // 1. Validate payload
   const validation = validateStatusTransitionInput(input);
   if (!validation.success) {
+    // When a single field is at fault, surface its precise message rather than a generic
+    // one (for example: "Repair completion notes of at least 5 characters are required").
+    const fieldMessages = Object.values(validation.errors).filter(
+      (message): message is string => typeof message === 'string' && message.length > 0
+    );
     return {
       success: false,
-      error: 'Invalid status transition payload.',
+      error:
+        fieldMessages.length === 1 ? fieldMessages[0] : 'Invalid status transition payload.',
       fieldErrors: validation.errors,
     };
   }
@@ -498,188 +448,55 @@ export async function transitionReportStatusRecord(
   }
 
   const { reportId, targetStatus } = validation.data;
-  const callerRole = user.profile.role;
+
+  // The command RPC owns the transition matrix. Rejecting the statuses that belong to other
+  // commands here produces a precise, actionable message instead of a generic failure.
+  const SUPPORTED_TRANSITIONS: ReportStatus[] = ['in_progress', 'on_hold', 'completed', 'cancelled'];
+  if (!SUPPORTED_TRANSITIONS.includes(targetStatus)) {
+    return {
+      success: false,
+      error:
+        targetStatus === 'assigned'
+          ? 'Use the technician assignment command to move a report to assigned.'
+          : targetStatus === 'under_review'
+            ? 'Use the triage command to move a report to under review.'
+            : targetStatus === 'verified' || targetStatus === 'reopened'
+              ? 'Use the verification command to close or reopen a completed report.'
+              : `Unsupported direct transition to "${targetStatus}".`,
+    };
+  }
 
   try {
-    // 3. Fetch current report state
-    const { data: report, error: reportError } = await supabase
-      .from('reports')
-      .select('id, status, reporter_id')
-      .eq('id', reportId)
-      .single();
+    // Execute the notification-bearing status command.
+    // The command re-derives the caller, the report state, the assignment ownership and the
+    // role permissions inside the database, applies the report and assignment side effects
+    // together, records the status history reason, and delivers the approved notifications.
+    const outcome = await invokeLifecycleRpc<{
+      report_id: string;
+      previous_status: string;
+      new_status: string;
+    }>(
+      supabase,
+      'transition_report_status_with_notifications',
+      {
+        p_report_id: reportId,
+        p_target_status: targetStatus,
+        p_reason: validation.data.reason ?? null,
+        p_request_id: resolveRequestId(context?.requestId ?? input),
+      },
+      'Failed to transition report status.'
+    );
 
-    if (reportError || !report) {
-      return {
-        success: false,
-        error: 'Report not found.',
-      };
-    }
-
-    const currentStatus = report.status as ReportStatus;
-
-    if (currentStatus === 'verified' || currentStatus === 'cancelled') {
-      return {
-        success: false,
-        error: 'Cannot transition a report that has reached a terminal state (verified or cancelled).',
-      };
-    }
-
-    if (currentStatus === targetStatus) {
-      return {
-        success: false,
-        error: `Report is already in status "${targetStatus}".`,
-      };
-    }
-
-    // 4. Role and state-machine authorization checks
-    if (targetStatus === 'cancelled') {
-      // Cancellation logic
-      const isReporter = report.reporter_id === user.id;
-      const isReporterEligible =
-        isReporter && (currentStatus === 'submitted' || currentStatus === 'under_review');
-      const isCoordinator = callerRole === 'coordinator';
-
-      if (!isReporterEligible && !isCoordinator) {
-        return {
-          success: false,
-          error:
-            'Access denied: You are not authorized to cancel this report in its current state.',
-        };
-      }
-
-      // If coordinator cancels, cancel active assignments as well (Approved PD-W4)
-      if (isCoordinator) {
-        await supabase
-          .from('assignments')
-          .update({ status: 'cancelled' })
-          .eq('report_id', reportId)
-          .in('status', ['assigned', 'in_progress', 'on_hold']);
-      }
-    } else if (targetStatus === 'in_progress') {
-      // Starting or resuming work
-      if (callerRole === 'technician') {
-        const { data: assignment } = await supabase
-          .from('assignments')
-          .select('id, status, started_at')
-          .eq('report_id', reportId)
-          .eq('technician_id', user.id)
-          .in('status', ['assigned', 'on_hold'])
-          .maybeSingle();
-
-        if (!assignment) {
-          return {
-            success: false,
-            error: 'Access denied: You do not have an eligible assignment on this report to start or resume work.',
-          };
-        }
-
-        const updatePayload: Record<string, unknown> = { status: 'in_progress' };
-        if (!assignment.started_at) {
-          updatePayload.started_at = new Date().toISOString();
-        }
-
-        await supabase
-          .from('assignments')
-          .update(updatePayload)
-          .eq('id', assignment.id);
-      } else if (callerRole === 'coordinator') {
-        if (currentStatus !== 'on_hold') {
-          return {
-            success: false,
-            error: 'Coordinators may only transition reports to in_progress from on_hold.',
-          };
-        }
-      } else {
-        return {
-          success: false,
-          error: 'Access denied: Only assigned technicians or coordinators may start or resume work.',
-        };
-      }
-    } else if (targetStatus === 'on_hold') {
-      // Placing work on hold (requires reason)
-      if (callerRole === 'technician') {
-        const { data: assignment } = await supabase
-          .from('assignments')
-          .select('id')
-          .eq('report_id', reportId)
-          .eq('technician_id', user.id)
-          .eq('status', 'in_progress')
-          .maybeSingle();
-
-        if (!assignment) {
-          return {
-            success: false,
-            error: 'Access denied: You do not have an active in-progress assignment to place on hold.',
-          };
-        }
-
-        await supabase
-          .from('assignments')
-          .update({ status: 'on_hold' })
-          .eq('id', assignment.id);
-      } else if (callerRole !== 'coordinator') {
-        return {
-          success: false,
-          error: 'Access denied: Only assigned technicians or coordinators may place work on hold.',
-        };
-      }
-    } else if (targetStatus === 'completed') {
-      // Completing repair
-      if (callerRole !== 'technician') {
-        return {
-          success: false,
-          error: 'Access denied: Only the assigned technician may mark a repair as completed.',
-        };
-      }
-
-      const { data: assignment } = await supabase
-        .from('assignments')
-        .select('id')
-        .eq('report_id', reportId)
-        .eq('technician_id', user.id)
-        .eq('status', 'in_progress')
-        .maybeSingle();
-
-      if (!assignment) {
-        return {
-          success: false,
-          error: 'Access denied: You do not have an in-progress assignment on this report to complete.',
-        };
-      }
-
-      await supabase
-        .from('assignments')
-        .update({ status: 'completed', completed_at: new Date().toISOString() })
-        .eq('id', assignment.id);
-    } else {
-      return {
-        success: false,
-        error: `Unsupported direct transition to "${targetStatus}". Use dedicated assignment or verification workflows.`,
-      };
-    }
-
-    // 5. Update report status in database (Trigger T3 automatically logs to report_status_history)
-    const { data: updatedReport, error: updateError } = await supabase
-      .from('reports')
-      .update({ status: targetStatus })
-      .eq('id', reportId)
-      .select('id, status')
-      .single();
-
-    if (updateError || !updatedReport) {
-      console.error('[transitionReportStatusRecord] Error updating report status:', updateError);
-      return {
-        success: false,
-        error: sanitizeErrorMessage(updateError, 'Failed to transition report status.'),
-      };
+    if (!outcome.ok) {
+      return { success: false, error: outcome.error };
     }
 
     return {
       success: true,
       data: {
-        reportId: updatedReport.id,
-        previousStatus: currentStatus,
-        newStatus: updatedReport.status as ReportStatus,
+        reportId: outcome.data.report_id,
+        previousStatus: outcome.data.previous_status as ReportStatus,
+        newStatus: outcome.data.new_status as ReportStatus,
       },
     };
   } catch (err) {
@@ -822,96 +639,39 @@ export async function verifyReportRecord(
   const { reportId, isSatisfactory, notes } = validation.data;
 
   try {
-    // 3. Verify report status and separation-of-duties preconditions
-    const { data: report, error: reportError } = await supabase
-      .from('reports')
-      .select('id, status, reporter_id')
-      .eq('id', reportId)
-      .single();
+    // Execute the notification-bearing verification command.
+    // The command locks the report, requires the 'completed' status, enforces the
+    // separation of duties (the reporter and the assigned technician may not verify their
+    // own work), writes the verification record, moves the report to 'verified' or
+    // 'reopened', and delivers the verification notification — all in one transaction.
+    const outcome = await invokeLifecycleRpc<{
+      verification_id: string;
+      report_id: string;
+      is_satisfactory: boolean;
+      new_status: string;
+    }>(
+      supabase,
+      'verify_report_with_notifications',
+      {
+        p_report_id: reportId,
+        p_is_satisfactory: isSatisfactory,
+        p_notes: notes ?? null,
+        p_request_id: resolveRequestId(context?.requestId ?? input),
+      },
+      'Failed to record verification result.'
+    );
 
-    if (reportError || !report) {
-      return {
-        success: false,
-        error: 'Report not found.',
-      };
-    }
-
-    if (report.status !== 'completed') {
-      return {
-        success: false,
-        error: `Only reports in completed status can be verified. Current status is "${report.status}".`,
-      };
-    }
-
-    if (report.reporter_id === user.id) {
-      return {
-        success: false,
-        error: 'Separation of duties violation: Coordinators cannot verify reports that they submitted.',
-      };
-    }
-
-    // 4. Verify coordinator did not serve as technician on this report
-    const { data: techAssignment } = await supabase
-      .from('assignments')
-      .select('id')
-      .eq('report_id', reportId)
-      .eq('technician_id', user.id)
-      .in('status', ['assigned', 'in_progress', 'completed'])
-      .maybeSingle();
-
-    if (techAssignment) {
-      return {
-        success: false,
-        error:
-          'Separation of duties violation: Coordinators cannot verify reports where they served as the technician.',
-      };
-    }
-
-    // 5. Insert verification record (must be performed while report is in 'completed' status per RLS)
-    const { data: verification, error: verifError } = await supabase
-      .from('verifications')
-      .insert({
-        report_id: reportId,
-        verified_by: user.id,
-        is_satisfactory: isSatisfactory,
-        notes: notes ?? null,
-      })
-      .select('id, report_id, is_satisfactory')
-      .single();
-
-    if (verifError || !verification) {
-      console.error('[verifyReportRecord] Error inserting verification record:', verifError);
-      return {
-        success: false,
-        error: sanitizeErrorMessage(verifError, 'Failed to record verification result.'),
-      };
-    }
-
-    // 6. Update report lifecycle status: 'verified' (terminal) or 'reopened' (rework)
-    const targetStatus: ReportStatus = isSatisfactory ? 'verified' : 'reopened';
-    const { error: updateError } = await supabase
-      .from('reports')
-      .update({ status: targetStatus })
-      .eq('id', reportId);
-
-    if (updateError) {
-      console.error('[verifyReportRecord] Partial failure: Failed to update report status:', updateError);
-      return {
-        success: false,
-        error: sanitizeErrorMessage(
-          updateError,
-          `Verification recorded, but failed to update report status to "${targetStatus}".`
-        ),
-      };
+    if (!outcome.ok) {
+      return { success: false, error: outcome.error };
     }
 
     return {
       success: true,
       data: {
-        verificationId: verification.id,
-        reportId: verification.report_id,
-        isSatisfactory: verification.is_satisfactory,
-        newStatus: targetStatus,
+        verificationId: outcome.data.verification_id,
+        reportId: outcome.data.report_id,
+        isSatisfactory: outcome.data.is_satisfactory,
+        newStatus: outcome.data.new_status as ReportStatus,
       },
     };
   } catch (err) {

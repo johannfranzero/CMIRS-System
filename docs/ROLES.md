@@ -1,6 +1,12 @@
 # CMIRS — User Roles and Permissions
 
-> **Status:** This document describes the **proposed** role-based access control design for CMIRS. No roles, permissions, or access controls have been implemented yet.
+> **Status:** This document describes the role-based access control design for CMIRS and is the
+> normative reference for the implemented permissions. The controls are implemented in the
+> application (Server Actions, route guards, navigation) and in PostgreSQL Row Level Security.
+> It was updated on 2026-10-21 (Phase 4H) to record the withdrawal of PD-R6: only
+> **Student / School Personnel** and **Maintenance Coordinator** may file a maintenance report.
+> Where this document and `docs/database-design/OPEN_DECISIONS.md` disagree, the decision
+> register records the current state of each decision.
 
 ## Table of Contents
 
@@ -49,6 +55,8 @@ The primary reporters in the system. Any campus community member who identifies 
 - Cannot assign technicians or change report priority.
 - Cannot verify completed repairs.
 - Cannot manage user accounts or roles.
+- **Cannot file a new maintenance report** (Phase 4H, 2026-10-21). A Maintenance Coordinator can
+  raise a report on the user's behalf.
 
 ### Maintenance Coordinator
 
@@ -92,6 +100,8 @@ The field worker who performs inspections and repairs.
 - Cannot change report priority.
 - Cannot manage user accounts or roles.
 - Cannot delete reports.
+- **Cannot file a new maintenance report** (Phase 4H, 2026-10-21). A Maintenance Coordinator can
+  raise a report on the user's behalf.
 - Visibility of reports assigned to other technicians is a **pending decision** (PD-R1).
 
 ### School Administrator
@@ -110,6 +120,7 @@ The system administrator responsible for user management and role assignment.
 - Cannot verify repairs (unless also assigned a Coordinator role — role overlap is not currently planned).
 - Cannot assign technicians to reports (operational function belongs to Coordinators).
 - Cannot elevate their own role beyond what was assigned to them by another administrator.
+- **Cannot file a new maintenance report** (Phase 4H, 2026-10-21).
 
 ### School Management
 
@@ -126,6 +137,7 @@ Oversight role for campus leadership who need visibility into maintenance operat
 
 - **Read-only access** to reports and data. Cannot create, modify, assign, or verify reports.
 - Cannot manage user accounts or roles.
+- **Cannot file a new maintenance report** (Phase 4H, 2026-10-21).
 
 ## Role Assignment
 
@@ -157,7 +169,7 @@ The default role (Student / School Personnel) is the most restricted operational
 | Permission | Student / Personnel | Coordinator | Technician | Administrator | Management |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Reports** | | | | | |
-| Submit new report | ✅ | ✅ | ✅ | — | — |
+| Submit new report | ✅ | ✅ | — | — | — |
 | Flag as urgent hazard | ✅ | ✅ | ✅ | — | — |
 | View own reports | ✅ | ✅ | ✅ | ✅ | ✅ |
 | View all reports | — | ✅ | ⚠️ | ✅ | ✅ |
@@ -222,7 +234,7 @@ The following decisions have not been finalized. They are recorded here to ensur
 | PD-R3 | Can technicians request or initiate work holds? | Work-hold workflow, status transitions, `report_status` values | Recommend allowing technician-initiated holds with a required reason, subject to coordinator review. |
 | PD-R4 | Can a Coordinator verify a report they themselves submitted? | Separation of duties, verification constraints, RLS policies | Recommend prohibiting self-verification to maintain independence. A different coordinator should verify. |
 | PD-R5 | Can submitters cancel their own reports after assignment? | Cancellation workflow, status transitions, reporter authority | Recommend allowing reporter cancellation only before assignment. After assignment, require coordinator approval. |
-| PD-R6 | Can Administrator and Management roles submit reports? | Role-permission matrix, `reports` insert policy | Currently marked as not permitted. Decide whether administrative users should also be able to report maintenance issues. |
+| PD-R6 | Can Administrator and Management roles submit reports? | Role-permission matrix, `reports` insert policy | **Resolved 2026-10-21 (Phase 4H).** PD-R6 ("all authenticated roles may submit") is **withdrawn**: only Student / School Personnel and Maintenance Coordinator may file a maintenance report. Enforced on the server (`submitReportAction`, the `/reports/new` route) and, in `supabase/migrations/20261021000014_restrict_report_submission_roles.sql`, at the database layer. The Maintenance Technician may not file a report; a Coordinator can raise one on the user's behalf. |
 
 ---
 

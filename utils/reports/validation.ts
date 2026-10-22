@@ -398,7 +398,11 @@ export function validateStatusTransitionInput(input: unknown): ValidationResult<
   }
 
   const target = raw.targetStatus as ReportStatus;
-  const reasonRequired = target === 'on_hold' || target === 'cancelled' || target === 'reopened';
+  // A reason is required for every target that records WHY the status changed:
+  //   * on_hold / cancelled / reopened -> the reason for the decision,
+  //   * completed                      -> the technician's repair completion notes, which the
+  //                                      coordinator must be able to inspect at verification.
+  const reasonRequired = target === 'on_hold' || target === 'cancelled' || target === 'reopened' || target === 'completed';
 
   let reason: string | undefined = undefined;
   if (typeof raw.reason === 'string') {
@@ -411,7 +415,10 @@ export function validateStatusTransitionInput(input: unknown): ValidationResult<
   }
 
   if (reasonRequired && (!reason || reason.length < 5)) {
-    errors.reason = `A reason of at least 5 characters is required when moving to status "${target}".`;
+    errors.reason =
+      target === 'completed'
+        ? 'Repair completion notes of at least 5 characters are required so the coordinator can verify the work.'
+        : `A reason of at least 5 characters is required when moving to status "${target}".`;
   }
 
   let assignmentId: string | undefined = undefined;

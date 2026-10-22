@@ -43,11 +43,11 @@ Phase 3B, 3C, and 3D changes are noted inline.
 
 | Value | Description |
 |---|---|
-| student_personnel | Default role assigned at registration. Primary reporters. Least operational permissions. |
-| coordinator | Maintenance Coordinator. Reviews, assigns, verifies. Cannot verify own submitted reports (APPROVED PD-R4). |
-| technician | Maintenance Technician. Performs repairs. Sees only qualifying assigned reports (APPROVED PD-R1). May decline assignments with a required reason (APPROVED PD-R2, OD-NEW-3). May submit reports (APPROVED PD-R6). |
-| administrator | School Administrator. Manages user accounts and role assignments. No operational maintenance actions. May submit reports (APPROVED PD-R6). |
-| management | School Management. Read-only oversight. May submit reports (APPROVED PD-R6). |
+| student_personnel | Default role assigned at registration. Primary reporters. Least operational permissions. May submit reports. |
+| coordinator | Maintenance Coordinator. Reviews, assigns, verifies. Cannot verify own submitted reports (APPROVED PD-R4). May submit reports. |
+| technician | Maintenance Technician. Performs repairs. Sees only qualifying assigned reports (APPROVED PD-R1). May decline assignments with a required reason (APPROVED PD-R2, OD-NEW-3). **May not submit reports** (PD-R6 withdrawn 2026-10-21, Phase 4H). |
+| administrator | School Administrator. Manages user accounts and role assignments. No operational maintenance actions. **May not submit reports** (PD-R6 withdrawn 2026-10-21, Phase 4H). |
+| management | School Management. Read-only oversight. **May not submit reports** (PD-R6 withdrawn 2026-10-21, Phase 4H). |
 
 ### report_status
 
@@ -176,7 +176,7 @@ Check: old_role <> new_role. Append-only.
 | description | TEXT | No | None | NOT NULL | Detailed description. |
 | category_id | UUID | No | None | NOT NULL, FK -> categories(id) RESTRICT | Maintenance category. |
 | location_id | UUID | No | None | NOT NULL, FK -> locations(id) RESTRICT | Issue location. |
-| reporter_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | User who submitted the report. Set to auth.uid() at INSERT. Any authenticated role may submit (APPROVED PD-R6). Used in PD-R4 self-verification check and PD-W2 cancellation. |
+| reporter_id | UUID | No | None | NOT NULL, FK -> profiles(id) RESTRICT | User who submitted the report. Set to auth.uid() at INSERT. Only the reporter roles may submit: Student / Personnel and Maintenance Coordinator (PD-R6 withdrawn 2026-10-21, Phase 4H). Used in PD-R4 self-verification check and PD-W2 cancellation. |
 | status | report_status | No | submitted | NOT NULL DEFAULT submitted | Current lifecycle status. |
 | is_urgent_hazard | BOOLEAN | No | false | NOT NULL DEFAULT false | Reporter urgent-hazard flag (D3). |
 | confirmed_priority | priority_level | Yes | NULL | None | Coordinator-confirmed priority. NULL until set (RECOMMENDED PD-D7). |

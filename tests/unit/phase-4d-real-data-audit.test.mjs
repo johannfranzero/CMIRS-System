@@ -154,6 +154,13 @@ function createInsertMockSupabase(handlers = {}) {
 
       return queryBuilder;
     },
+    rpc(fnName, args) {
+      operations.push({ type: 'rpc', fnName, args });
+      if (handlers.rpc) {
+        return Promise.resolve(handlers.rpc(fnName, args));
+      }
+      return Promise.resolve({ data: null, error: null });
+    },
   };
 }
 
@@ -296,6 +303,55 @@ test('Phase 4D: functional modules contain no mock technician identities or fake
           'render mock identities or hardcoded SLA metrics.'
       );
     }
+  }
+});
+
+test('Phase 4D.1: no functional module asserts an unverified backend connection state', () => {
+  const runtimeFiles = [
+    ...collectRuntimeSourceFiles('app'),
+    ...collectRuntimeSourceFiles('components'),
+    ...collectRuntimeSourceFiles('utils'),
+  ];
+
+  // The removed banner claimed a verified connection ("Live Backend Connected",
+  // "Serving records from Supabase Cloud", "Live RLS Active") that the server component
+  // cannot actually prove: a successful query may still return zero rows, and RLS is
+  // enforced inside the database rather than reported by the client.
+  const forbidden = [
+    'Live Backend Connected',
+    'Serving records from Supabase Cloud',
+    'Live RLS Active',
+    'Degraded State',
+    'Database Service Notice',
+  ];
+
+  for (const file of runtimeFiles) {
+    const source = readSource(file);
+    // Ignore the explanatory code comments that document the removal.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+    for (const needle of forbidden) {
+      assert.ok(
+        !code.includes(needle),
+        `${file} still asserts the unverified connection claim "${needle}".`
+      );
+    }
+  }
+});
+
+test('Phase 4D.1: the dashboard and report queue still render their real error notices', () => {
+  for (const file of ['app/page.tsx', 'app/reports/page.tsx']) {
+    const source = readSource(file);
+    assert.ok(
+      /Notice:/.test(source),
+      `${file} must keep the honest, sanitized per-query error notice.`
+    );
+    assert.ok(
+      /\.error/.test(source),
+      `${file} must still surface the DAL error state.`
+    );
   }
 });
 
@@ -512,6 +568,41 @@ test('Phase 4D: database errors map to accurate, non-revealing user-facing notic
   assert.ok(!unknown.includes('relation'));
 });
 
+test('Phase 4D.1: a failing RLS policy helper is reported as a database evaluation failure, not a permission denial', () => {
+  // Live remote evidence (captured in .next/dev/logs/next-development.log):
+  //   [DAL] getReportsQueue query error: "column reference \"report_id\" is ambiguous"
+  //   | code= "42702" | status= "unknown"
+  // PostgreSQL 42702 is `ambiguous_column`. It is raised by the PL/pgSQL helper
+  // public.can_view_report(report_id UUID) because its parameter name collides with the
+  // `report_id` column of public.assignments in the query inside the function body.
+  const ambiguous = {
+    code: '42702',
+    message: 'column reference "report_id" is ambiguous',
+  };
+
+  const notice = describeDatabaseError(ambiguous);
+  assert.ok(notice, 'A policy-helper failure must produce a user-facing notice');
+  assert.match(notice, /visibility rule/i);
+  assert.ok(
+    !/permission/i.test(notice),
+    'A database function evaluation failure must not be reported as a permission denial'
+  );
+  assert.ok(!/report_id/.test(notice), 'The notice must not leak the internal column name');
+  assert.ok(!/42702/.test(notice), 'The notice must not leak the raw database error code');
+
+  // The same error must also be classified correctly when it only carries the message.
+  assert.match(
+    describeDatabaseError({ code: 'PGRST000', message: 'column reference "report_id" is ambiguous' }),
+    /visibility rule/i
+  );
+
+  // A genuine permission denial must still read as a permission denial.
+  assert.match(
+    describeDatabaseError({ code: '42501', message: 'new row violates row-level security policy' }),
+    /do not have permission/i
+  );
+});
+
 // =============================================================================
 // 6. Report submission: validation, failure handling, and success semantics
 // =============================================================================
@@ -573,6 +664,13 @@ test('Phase 4D: a failed insert is reported as an error and never as a success',
         },
       }),
     },
+    rpc: () => ({
+      data: null,
+      error: {
+        code: '23503',
+        message: 'insert or update on table "reports" violates foreign key constraint "reports_category_id_fkey"',
+      },
+    }),
   });
 
   const result = await submitReportAction(
@@ -610,6 +708,15 @@ test('Phase 4D: a successful submission returns the persisted report identity on
         error: null,
       }),
     },
+    rpc: () => ({
+      data: {
+        report_id: UUID_REPORT,
+        report_number: 'RPT-000042',
+        status: 'submitted',
+        created_at: '2026-10-20T08:00:00Z',
+      },
+      error: null,
+    }),
   });
 
   const result = await submitReportAction(
@@ -630,14 +737,20 @@ test('Phase 4D: a successful submission returns the persisted report identity on
   assert.equal(result.data?.status, 'submitted');
   assert.match(result.message, /RPT-000042/);
 
-  // The insert must carry only server-derived authority fields.
-  const insertOp = mockSupabase.operations.find((op) => op.type === 'insert');
-  assert.ok(insertOp, 'Expected a reports insert operation');
-  assert.equal(insertOp.table, 'reports');
-  assert.equal(insertOp.payload.reporter_id, UUID_STUDENT);
-  assert.equal(insertOp.payload.status, 'submitted');
-  assert.equal(insertOp.payload.confirmed_priority, null);
-  assert.equal(insertOp.payload.is_urgent_hazard, true);
+  // The command must carry only server-derived authority fields and an idempotency token.
+  const rpcOp = mockSupabase.operations.find((op) => op.type === 'rpc');
+  assert.ok(rpcOp, 'Expected the notification-bearing submission command to be invoked');
+  assert.equal(rpcOp.fnName, 'submit_report_with_notifications');
+  assert.equal(rpcOp.args.p_title, 'Water pipe burst in laboratory');
+  assert.equal(rpcOp.args.p_category_id, UUID_CATEGORY);
+  assert.equal(rpcOp.args.p_location_id, UUID_LOCATION);
+  assert.equal(rpcOp.args.p_is_urgent_hazard, true);
+  assert.ok(rpcOp.args.p_request_id, 'The command must carry an idempotency token');
+  // The client must never be able to supply the reporter identity or the initial status.
+  assert.equal(rpcOp.args.p_reporter_id, undefined);
+  assert.equal(rpcOp.args.reporter_id, undefined);
+  assert.equal(rpcOp.args.p_status, undefined);
+  assert.equal(rpcOp.args.status, undefined);
 });
 
 test('Phase 4D: the FormData submission path produces the same persisted report', async () => {
@@ -653,6 +766,15 @@ test('Phase 4D: the FormData submission path produces the same persisted report'
         error: null,
       }),
     },
+    rpc: () => ({
+      data: {
+        report_id: UUID_REPORT,
+        report_number: 'RPT-000043',
+        status: 'submitted',
+        created_at: '2026-10-20T08:05:00Z',
+      },
+      error: null,
+    }),
   });
 
   const formData = new FormData();
@@ -661,6 +783,7 @@ test('Phase 4D: the FormData submission path produces the same persisted report'
   formData.set('categoryId', UUID_CATEGORY);
   formData.set('locationId', UUID_LOCATION);
   formData.set('isUrgentHazard', 'on');
+  formData.set('requestId', '11111111-2222-4333-8444-555555555555');
 
   const result = await submitReportAction(INITIAL_ACTION_STATE, formData, {
     user: studentUser,
@@ -670,9 +793,12 @@ test('Phase 4D: the FormData submission path produces the same persisted report'
   assert.equal(result.status, 'success');
   assert.equal(result.data?.reportNumber, 'RPT-000043');
 
-  const insertOp = mockSupabase.operations.find((op) => op.type === 'insert');
-  assert.equal(insertOp.payload.is_urgent_hazard, true);
-  assert.equal(insertOp.payload.title, 'Broken ceiling light in lecture hall');
+  const rpcOp = mockSupabase.operations.find((op) => op.type === 'rpc');
+  assert.ok(rpcOp);
+  assert.equal(rpcOp.args.p_is_urgent_hazard, true);
+  assert.equal(rpcOp.args.p_title, 'Broken ceiling light in lecture hall');
+  // The client-supplied idempotency token must be forwarded unchanged.
+  assert.equal(rpcOp.args.p_request_id, '11111111-2222-4333-8444-555555555555');
 });
 
 test('Phase 4D: unauthenticated and inactive callers cannot create a report', async () => {
@@ -757,5 +883,109 @@ test('Phase 4D: the report submission form disables submission when reference da
   assert.ok(
     /Submission Unavailable/.test(source),
     'The form must render an explicit unavailable state instead of an empty category list'
+  );
+});
+
+test('Phase 4D.2: the photo picker is NOT part of the report submission form', () => {
+  const source = readSource('components/reports/report-submission-form.tsx');
+
+  const formOpen = source.indexOf('<form action={formAction}');
+  const formClose = source.indexOf('</form>');
+  assert.ok(formOpen > 0 && formClose > formOpen, 'The report form must be locatable');
+
+  const insideForm = source.slice(formOpen, formClose);
+  const fileInputIndex = source.indexOf('id="report-photo-input"');
+  assert.ok(fileInputIndex > 0, 'The photo picker must exist');
+
+  assert.ok(
+    fileInputIndex > formClose,
+    'The photo picker must be rendered AFTER the </form> element. A file control inside a form ' +
+      'is submitted with it, which posts the photo bytes to the report-submission Server Action ' +
+      'and exceeds the Server Action body-size limit.'
+  );
+  assert.ok(
+    !/type="file"/.test(insideForm),
+    'No file control may live inside the report submission form'
+  );
+
+  // The label must point at the relocated control.
+  assert.ok(
+    /htmlFor="report-photo-input"/.test(source),
+    'The visible "Choose Image Files" control must reference the relocated input'
+  );
+});
+
+test('Phase 4D.2: the Server Action body limit accommodates one maximum-size attachment', () => {
+  const config = readSource('next.config.ts');
+
+  assert.ok(
+    /serverActions\s*:\s*\{[\s\S]*?bodySizeLimit/.test(config),
+    'next.config.ts must configure experimental.serverActions.bodySizeLimit'
+  );
+
+  const limitMatch = /bodySizeLimit\s*:\s*['"]?(\d+)\s*(kb|mb|gb)?['"]?/i.exec(config);
+  assert.ok(limitMatch, 'The configured body size limit must be readable');
+
+  const amount = Number(limitMatch[1]);
+  const unit = (limitMatch[2] ?? 'b').toLowerCase();
+  const limitBytes = amount * { b: 1, kb: 1024, mb: 1024 * 1024, gb: 1024 * 1024 * 1024 }[unit];
+
+  // The server-side validator caps a single attachment at 10 MB.
+  const validationSource = readSource('utils/reports/validation.ts');
+  const capMatch = /MAX_ATTACHMENT_BYTES\s*=\s*(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)/.exec(validationSource);
+  assert.ok(capMatch, 'The per-attachment byte cap must be readable');
+  const capBytes = Number(capMatch[1]) * Number(capMatch[2]) * Number(capMatch[3]);
+
+  assert.ok(
+    limitBytes > capBytes,
+    `The Server Action body limit (${limitBytes} bytes) must exceed the maximum single ` +
+      `attachment size (${capBytes} bytes) so an allowed upload is never rejected by the framework`
+  );
+});
+
+test('Phase 4D.2: the proxy body buffer limit is at least as large as the Server Action limit', () => {
+  const config = readSource('next.config.ts');
+
+  // Next.js buffers the request body in memory whenever a proxy is configured and TRUNCATES
+  // anything above the limit, which corrupts a multipart upload ("Unexpected end of form").
+  // The default is 10 MB — smaller than the 10 MB per-attachment cap — so it must be raised.
+  assert.ok(
+    /proxyClientMaxBodySize\s*:/.test(config),
+    'next.config.ts must configure experimental.proxyClientMaxBodySize'
+  );
+
+  const parseLimit = (expression) => {
+    const match = /['"]?(\d+)\s*(b|kb|mb|gb)?['"]?/i.exec(expression);
+    if (!match) return null;
+    const unit = (match[2] ?? 'b').toLowerCase();
+    return (
+      Number(match[1]) * { b: 1, kb: 1024, mb: 1024 * 1024, gb: 1024 * 1024 * 1024 }[unit]
+    );
+  };
+
+  const actionLimit = parseLimit(
+    /bodySizeLimit\s*:\s*([^,\n}]+)/.exec(config)?.[1] ?? ''
+  );
+  const proxyLimit = parseLimit(
+    /proxyClientMaxBodySize\s*:\s*([^,\n}]+)/.exec(config)?.[1] ?? ''
+  );
+
+  assert.ok(actionLimit, 'The Server Action body limit must be readable');
+  assert.ok(proxyLimit, 'The proxy body buffer limit must be readable');
+
+  assert.ok(
+    proxyLimit >= actionLimit,
+    `The proxy buffer limit (${proxyLimit} bytes) must be at least the Server Action limit ` +
+      `(${actionLimit} bytes); otherwise the body is truncated before the action sees it`
+  );
+
+  const validationSource = readSource('utils/reports/validation.ts');
+  const capMatch = /MAX_ATTACHMENT_BYTES\s*=\s*(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)/.exec(validationSource);
+  const capBytes = Number(capMatch[1]) * Number(capMatch[2]) * Number(capMatch[3]);
+
+  assert.ok(
+    proxyLimit > capBytes,
+    `The proxy buffer limit (${proxyLimit} bytes) must exceed the maximum single attachment ` +
+      `size (${capBytes} bytes)`
   );
 });

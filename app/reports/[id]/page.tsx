@@ -41,8 +41,16 @@ export default async function ReportDetailPage({ params }: ReportDetailPageProps
     technicianDirectoryError = techniciansResult.error;
   }
 
-  // Handle report not found or access denied
+  // Handle report not found, access denied, or a failed visibility query
   if (!report) {
+    // Phase 4D.2: distinguish a database failure from a genuine "not found / not permitted"
+    // result so a failed query is never presented as an authorization answer.
+    const isQueryFailure = Boolean(
+      detailResult.error &&
+        !/not found or access denied/i.test(detailResult.error) &&
+        !/valid report identifier/i.test(detailResult.error)
+    );
+
     return (
       <AppShell user={user} pageTitle="Report Details">
         <div className="max-w-2xl mx-auto py-12">
@@ -53,13 +61,20 @@ export default async function ReportDetailPage({ params }: ReportDetailPageProps
               </div>
 
               <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                Report Not Found
+                {isQueryFailure ? 'Report Data Unavailable' : 'Report Not Found'}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500 max-w-md leading-relaxed">
                 {detailResult.error ||
                   'The requested report could not be found, or your institutional account credentials do not permit viewing this record.'}
               </p>
+
+              {isQueryFailure && (
+                <p className="mt-2 text-xs text-slate-400 max-w-md">
+                  The database query did not complete. This is not a statement that the report does
+                  not exist.
+                </p>
+              )}
 
               <div className="mt-6 flex items-center gap-3">
                 <Link href="/reports">

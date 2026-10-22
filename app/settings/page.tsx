@@ -45,7 +45,7 @@ export default async function SettingsPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Administrator Settings</h1>
             <p className="mt-1 text-sm leading-relaxed text-slate-600 sm:text-base">
-              Read-only account, user-directory, and role-audit information.
+              Institutional account directory, account-state management, and role-audit information.
             </p>
           </div>
         </header>
@@ -95,7 +95,7 @@ export default async function SettingsPage() {
                 }
               />
             ) : (
-              <UserDirectory users={settingsData.userDirectory.users} />
+              <UserDirectory users={settingsData.userDirectory.users} currentUserId={user.id} />
             )}
           </CardContent>
         </Card>

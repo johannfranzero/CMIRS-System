@@ -193,18 +193,23 @@ test('Validation & Spoofing Guard: Rejects invalid payloads and client-supplied 
   assert.equal(mockSupabase.operations.length, 0, 'No database query executed on invalid/spoofed payload');
 });
 
-test('Report Creation: Constructs correct PostgREST query and returns generated fields', async () => {
+test('Report Creation: Executes the notification-bearing command RPC and returns generated fields', async () => {
+  // Phase 4C: the report insert and the coordinator notifications are performed by the
+  // `submit_report_with_notifications` command RPC in one database transaction.
   const mockSupabase = createMockSupabase({
-    reports: {
-      single: () => ({
-        data: {
-          id: UUID_REPORT,
-          report_number: 'RPT-000042',
-          status: 'submitted',
-          created_at: '2026-10-20T10:00:00Z',
-        },
-        error: null,
-      }),
+    rpc: (fnName) => {
+      if (fnName === 'submit_report_with_notifications') {
+        return {
+          data: {
+            report_id: UUID_REPORT,
+            report_number: 'RPT-000042',
+            status: 'submitted',
+            created_at: '2026-10-20T10:00:00Z',
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
     },
   });
 
@@ -222,25 +227,27 @@ test('Report Creation: Constructs correct PostgREST query and returns generated 
   assert.equal(res.data.reportNumber, 'RPT-000042');
   assert.equal(res.data.status, 'submitted');
 
-  // Verify query construction
-  const insertOp = mockSupabase.operations.find((op) => op.type === 'insert');
-  assert.ok(insertOp, 'Insert operation must occur');
-  assert.equal(insertOp.table, 'reports');
-  assert.equal(insertOp.payload.reporter_id, studentUser.id);
-  assert.equal(insertOp.payload.status, 'submitted');
-  assert.equal(insertOp.payload.confirmed_priority, null);
-  assert.equal(insertOp.payload.title, payload.title);
-  assert.equal(insertOp.payload.is_urgent_hazard, true);
+  // Verify the command invocation
+  const rpcOp = mockSupabase.operations.find((op) => op.type === 'rpc');
+  assert.ok(rpcOp, 'The command RPC must be invoked');
+  assert.equal(rpcOp.fnName, 'submit_report_with_notifications');
+  assert.equal(rpcOp.args.p_title, payload.title);
+  assert.equal(rpcOp.args.p_category_id, UUID_CATEGORY);
+  assert.equal(rpcOp.args.p_location_id, UUID_LOCATION);
+  assert.equal(rpcOp.args.p_is_urgent_hazard, true);
+  assert.ok(rpcOp.args.p_request_id, 'The command must carry an idempotency token');
+
+  // The client must never be able to supply the reporter identity.
+  assert.equal(rpcOp.args.p_reporter_id, undefined);
+  assert.equal(rpcOp.args.reporter_id, undefined);
 });
 
 test('Report Creation: Sanitizes database errors and does not leak internal SQL', async () => {
   const mockSupabase = createMockSupabase({
-    reports: {
-      single: () => ({
-        data: null,
-        error: { code: '23503', message: 'violates foreign key constraint "reports_category_id_fkey" on "reports"' },
-      }),
-    },
+    rpc: () => ({
+      data: null,
+      error: { code: '23503', message: 'violates foreign key constraint "reports_category_id_fkey" on "reports"' },
+    }),
   });
 
   const payload = {
@@ -282,11 +289,14 @@ test('Report Triage: Restricts triage to coordinator role and updates confirmed 
 
   // 3. Coordinator triage -> success
   const mockSupabase = createMockSupabase({
-    reports: {
-      single: () => ({
-        data: { id: UUID_REPORT, status: 'under_review', confirmed_priority: 'high' },
-        error: null,
-      }),
+    rpc: (fnName) => {
+      if (fnName === 'triage_report_with_notifications') {
+        return {
+          data: { report_id: UUID_REPORT, status: 'under_review', confirmed_priority: 'high' },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
     },
   });
 
@@ -295,12 +305,13 @@ test('Report Triage: Restricts triage to coordinator role and updates confirmed 
   assert.equal(coordRes.data.status, 'under_review');
   assert.equal(coordRes.data.confirmedPriority, 'high');
 
-  const updateOp = mockSupabase.operations.find((op) => op.type === 'update');
-  assert.ok(updateOp);
-  assert.equal(updateOp.table, 'reports');
-  assert.equal(updateOp.payload.confirmed_priority, 'high');
-  assert.equal(updateOp.payload.status, 'under_review');
-  assert.equal(updateOp.filters.id, UUID_REPORT);
+  const rpcOp = mockSupabase.operations.find((op) => op.type === 'rpc');
+  assert.ok(rpcOp);
+  assert.equal(rpcOp.fnName, 'triage_report_with_notifications');
+  assert.equal(rpcOp.args.p_report_id, UUID_REPORT);
+  assert.equal(rpcOp.args.p_confirmed_priority, 'high');
+  assert.equal(rpcOp.args.p_target_status, 'under_review');
+  assert.ok(rpcOp.args.p_request_id, 'The command must carry an idempotency token');
 });
 
 test('Technician Assignment: Enforces active technician role and non-terminal report state', async () => {
@@ -310,43 +321,45 @@ test('Technician Assignment: Enforces active technician role and non-terminal re
     notes: 'Please bring ladder',
   };
 
-  // 1. Target user is not a technician (e.g. is student)
+  // 1. Target user is not a technician (e.g. is student) — enforced by the command RPC
   const nonTechMock = createMockSupabase({
-    profiles: {
-      single: () => ({ data: { id: UUID_TECHNICIAN, role: 'student_personnel', is_active: true }, error: null }),
-    },
+    rpc: () => ({
+      data: null,
+      error: { message: 'CMIRS_INVALID_INPUT: technician must be an active technician account' },
+    }),
   });
   const badTargetRes = await assignTechnicianToReport(assignPayload, { user: coordinatorUser, supabase: nonTechMock });
   assert.equal(badTargetRes.success, false);
-  assert.match(badTargetRes.error, /active Maintenance Technician/);
+  assert.match(badTargetRes.error, /rejected/i);
 
   // 2. Target report is closed / verified
   const closedReportMock = createMockSupabase({
-    profiles: {
-      single: () => ({ data: { id: UUID_TECHNICIAN, role: 'technician', is_active: true }, error: null }),
-    },
-    reports: {
-      single: () => ({ data: { id: UUID_REPORT, status: 'verified', reporter_id: UUID_STUDENT }, error: null }),
-    },
+    rpc: () => ({
+      data: null,
+      error: { message: 'CMIRS_INVALID_STATE: report is already in a terminal state' },
+    }),
   });
   const closedRes = await assignTechnicianToReport(assignPayload, { user: coordinatorUser, supabase: closedReportMock });
   assert.equal(closedRes.success, false);
-  assert.match(closedRes.error, /verified or cancelled report/);
+  assert.match(closedRes.error, /not valid for the current state/i);
 });
 
 test('Technician Assignment: Reassignment reverts in_progress report to assigned (Approved Decision 1)', async () => {
   const mockSupabase = createMockSupabase({
-    profiles: {
-      single: () => ({ data: { id: UUID_TECHNICIAN, role: 'technician', is_active: true }, error: null }),
-    },
-    reports: {
-      single: () => ({ data: { id: UUID_REPORT, status: 'in_progress', reporter_id: UUID_STUDENT }, error: null }),
-    },
-    assignments: {
-      single: () => ({
-        data: { id: UUID_ASSIGNMENT, report_id: UUID_REPORT, technician_id: UUID_TECHNICIAN, status: 'assigned' },
-        error: null,
-      }),
+    rpc: (fnName) => {
+      if (fnName === 'assign_or_reassign_report_with_notifications') {
+        return {
+          data: {
+            assignment_id: UUID_ASSIGNMENT,
+            report_id: UUID_REPORT,
+            technician_id: UUID_TECHNICIAN,
+            status: 'assigned',
+            was_reassignment: true,
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
     },
   });
 
@@ -357,35 +370,23 @@ test('Technician Assignment: Reassignment reverts in_progress report to assigned
 
   assert.equal(res.success, true);
   assert.equal(res.data.status, 'assigned');
+  assert.equal(res.data.assignmentId, UUID_ASSIGNMENT);
 
-  // Verify previous assignment marked as 'reassigned'
-  const reassignUpdateOp = mockSupabase.operations.find(
-    (op) => op.table === 'assignments' && op.type === 'update' && op.payload.status === 'reassigned'
-  );
-  assert.ok(reassignUpdateOp, 'Must mark prior assignment as reassigned');
-
-  // Verify report status updated to 'assigned'
-  const reportStatusUpdateOp = mockSupabase.operations.find(
-    (op) => op.table === 'reports' && op.type === 'update' && op.payload.status === 'assigned'
-  );
-  assert.ok(reportStatusUpdateOp, 'Must revert report status to assigned');
+  // The command reports the reassignment and the assignment notes are forwarded.
+  const rpcOp = mockSupabase.operations.find((op) => op.type === 'rpc');
+  assert.ok(rpcOp);
+  assert.equal(rpcOp.fnName, 'assign_or_reassign_report_with_notifications');
+  assert.equal(rpcOp.args.p_report_id, UUID_REPORT);
+  assert.equal(rpcOp.args.p_technician_id, UUID_TECHNICIAN);
+  assert.equal(rpcOp.args.p_notes, 'Reassigned to specialist');
 });
 
-test('Technician Assignment: Handles partial failure when report status update fails', async () => {
+test('Technician Assignment: Surfaces a command failure instead of a partial success', async () => {
   const mockSupabase = createMockSupabase({
-    profiles: {
-      single: () => ({ data: { id: UUID_TECHNICIAN, role: 'technician', is_active: true }, error: null }),
-    },
-    reports: {
-      single: () => ({ data: { id: UUID_REPORT, status: 'in_progress', reporter_id: UUID_STUDENT }, error: null }),
-      update: () => ({ data: null, error: { message: 'Database timeout on update' } }),
-    },
-    assignments: {
-      single: () => ({
-        data: { id: UUID_ASSIGNMENT, report_id: UUID_REPORT, technician_id: UUID_TECHNICIAN, status: 'assigned' },
-        error: null,
-      }),
-    },
+    rpc: () => ({
+      data: null,
+      error: { message: 'CMIRS_INVALID_STATE: the technician is already assigned to this report' },
+    }),
   });
 
   const res = await assignTechnicianToReport(
@@ -393,9 +394,9 @@ test('Technician Assignment: Handles partial failure when report status update f
     { user: coordinatorUser, supabase: mockSupabase }
   );
 
-  // Partial failure should not return success
+  // A command failure must never be reported as success.
   assert.equal(res.success, false);
-  assert.match(res.error, /failed to update report lifecycle status/);
+  assert.match(res.error, /not valid for the current state/i);
 });
 
 test('Decline Assignment RPC: Enforces technician role and invokes decline_assignment RPC', async () => {
@@ -423,11 +424,12 @@ test('Decline Assignment RPC: Enforces technician role and invokes decline_assig
 });
 
 test('Status Transitions: Enforces reporter cancellation eligibility and active work state machine', async () => {
-  // 1. Reporter cannot cancel a report once work is in_progress
+  // 1. Reporter cannot cancel a report once work is in_progress (enforced by the command RPC)
   const inProgressReportMock = createMockSupabase({
-    reports: {
-      single: () => ({ data: { id: UUID_REPORT, status: 'in_progress', reporter_id: UUID_STUDENT }, error: null }),
-    },
+    rpc: () => ({
+      data: null,
+      error: { message: 'CMIRS_FORBIDDEN: reporters may only change their own reports' },
+    }),
   });
 
   const reporterCancelBad = await transitionReportStatusRecord(
@@ -435,17 +437,18 @@ test('Status Transitions: Enforces reporter cancellation eligibility and active 
     { user: studentUser, supabase: inProgressReportMock }
   );
   assert.equal(reporterCancelBad.success, false);
-  assert.match(reporterCancelBad.error, /not authorized to cancel/);
+  assert.match(reporterCancelBad.error, /do not have permission/i);
 
   // 2. Reporter can cancel own submitted report
   const submittedReportMock = createMockSupabase({
-    reports: {
-      single: (op) => {
-        if (op.type === 'update') {
-          return { data: { id: UUID_REPORT, status: 'cancelled' }, error: null };
-        }
-        return { data: { id: UUID_REPORT, status: 'submitted', reporter_id: UUID_STUDENT }, error: null };
-      },
+    rpc: (fnName) => {
+      if (fnName === 'transition_report_status_with_notifications') {
+        return {
+          data: { report_id: UUID_REPORT, previous_status: 'submitted', new_status: 'cancelled' },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
     },
   });
 
@@ -456,15 +459,16 @@ test('Status Transitions: Enforces reporter cancellation eligibility and active 
   assert.equal(reporterCancelGood.success, true);
   assert.equal(reporterCancelGood.data.newStatus, 'cancelled');
 
-  // 3. Coordinator cancelling also cancels active assignments
+  // 3. Coordinator cancellation is performed atomically by the command RPC
   const coordCancelMock = createMockSupabase({
-    reports: {
-      single: (op) => {
-        if (op.type === 'update') {
-          return { data: { id: UUID_REPORT, status: 'cancelled' }, error: null };
-        }
-        return { data: { id: UUID_REPORT, status: 'in_progress', reporter_id: UUID_STUDENT }, error: null };
-      },
+    rpc: (fnName) => {
+      if (fnName === 'transition_report_status_with_notifications') {
+        return {
+          data: { report_id: UUID_REPORT, previous_status: 'in_progress', new_status: 'cancelled' },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
     },
   });
 
@@ -473,10 +477,25 @@ test('Status Transitions: Enforces reporter cancellation eligibility and active 
     { user: coordinatorUser, supabase: coordCancelMock }
   );
   assert.equal(coordCancelRes.success, true);
-  const cancelAssignOp = coordCancelMock.operations.find(
-    (op) => op.table === 'assignments' && op.type === 'update' && op.payload.status === 'cancelled'
-  );
-  assert.ok(cancelAssignOp, 'Coordinator cancellation must cancel active assignments');
+
+  const rpcOp = coordCancelMock.operations.find((op) => op.type === 'rpc');
+  assert.ok(rpcOp);
+  assert.equal(rpcOp.fnName, 'transition_report_status_with_notifications');
+  assert.equal(rpcOp.args.p_target_status, 'cancelled');
+  assert.equal(rpcOp.args.p_reason, 'Duplicate ticket');
+  assert.ok(rpcOp.args.p_request_id, 'The command must carry an idempotency token');
+});
+
+test('Status Transitions: Rejects a transition that belongs to another command', async () => {
+  // 'assigned' is owned by the assignment command and 'verified' by the verification command.
+  for (const targetStatus of ['assigned', 'under_review', 'verified', 'reopened']) {
+    const res = await transitionReportStatusRecord(
+      { reportId: UUID_REPORT, targetStatus, reason: 'Attempted direct transition' },
+      { user: coordinatorUser, supabase: createMockSupabase() }
+    );
+    assert.equal(res.success, false, `Transition to ${targetStatus} must be refused`);
+    assert.ok(res.error);
+  }
 });
 
 test('Work Logs: Records technician work session with valid hours and assignment link', async () => {
@@ -510,11 +529,12 @@ test('Work Logs: Records technician work session with valid hours and assignment
 });
 
 test('Coordinator Verification: Enforces separation of duties (PD-R4 and D2)', async () => {
-  // 1. Coordinator cannot verify report they submitted (PD-R4)
+  // 1. Coordinator cannot verify report they submitted (PD-R4, enforced by the command RPC)
   const selfSubmitMock = createMockSupabase({
-    reports: {
-      single: () => ({ data: { id: UUID_REPORT, status: 'completed', reporter_id: UUID_COORDINATOR }, error: null }),
-    },
+    rpc: () => ({
+      data: null,
+      error: { message: 'CMIRS_FORBIDDEN: a reporter may not verify their own report' },
+    }),
   });
 
   const selfSubmitRes = await verifyReportRecord(
@@ -522,16 +542,14 @@ test('Coordinator Verification: Enforces separation of duties (PD-R4 and D2)', a
     { user: coordinatorUser, supabase: selfSubmitMock }
   );
   assert.equal(selfSubmitRes.success, false);
-  assert.match(selfSubmitRes.error, /cannot verify reports that they submitted/);
+  assert.match(selfSubmitRes.error, /do not have permission/i);
 
   // 2. Coordinator cannot verify report where they served as technician (D2)
   const selfTechMock = createMockSupabase({
-    reports: {
-      single: () => ({ data: { id: UUID_REPORT, status: 'completed', reporter_id: UUID_STUDENT }, error: null }),
-    },
-    assignments: {
-      maybeSingle: () => ({ data: { id: UUID_ASSIGNMENT }, error: null }),
-    },
+    rpc: () => ({
+      data: null,
+      error: { message: 'CMIRS_FORBIDDEN: the assigned technician may not verify their own repair' },
+    }),
   });
 
   const selfTechRes = await verifyReportRecord(
@@ -539,22 +557,24 @@ test('Coordinator Verification: Enforces separation of duties (PD-R4 and D2)', a
     { user: coordinatorUser, supabase: selfTechMock }
   );
   assert.equal(selfTechRes.success, false);
-  assert.match(selfTechRes.error, /cannot verify reports where they served as the technician/);
+  assert.match(selfTechRes.error, /do not have permission/i);
 });
 
 test('Coordinator Verification: Rejection records notes and reopens report (Approved Decision 2)', async () => {
   const mockSupabase = createMockSupabase({
-    reports: {
-      single: () => ({ data: { id: UUID_REPORT, status: 'completed', reporter_id: UUID_STUDENT }, error: null }),
-    },
-    assignments: {
-      maybeSingle: () => ({ data: null, error: null }),
-    },
-    verifications: {
-      single: () => ({
-        data: { id: 'verification-uuid-1', report_id: UUID_REPORT, is_satisfactory: false },
-        error: null,
-      }),
+    rpc: (fnName) => {
+      if (fnName === 'verify_report_with_notifications') {
+        return {
+          data: {
+            verification_id: 'verification-uuid-1',
+            report_id: UUID_REPORT,
+            is_satisfactory: false,
+            new_status: 'reopened',
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
     },
   });
 
@@ -569,15 +589,11 @@ test('Coordinator Verification: Rejection records notes and reopens report (Appr
   assert.equal(res.data.isSatisfactory, false);
   assert.equal(res.data.newStatus, 'reopened');
 
-  // Verify verification row inserted
-  const verifInsertOp = mockSupabase.operations.find((op) => op.table === 'verifications');
-  assert.ok(verifInsertOp);
-  assert.equal(verifInsertOp.payload.is_satisfactory, false);
-  assert.equal(verifInsertOp.payload.notes, rejectPayload.notes);
-
-  // Verify report status updated to 'reopened'
-  const reportUpdateOp = mockSupabase.operations.find(
-    (op) => op.table === 'reports' && op.type === 'update' && op.payload.status === 'reopened'
-  );
-  assert.ok(reportUpdateOp, 'Report status must transition to reopened');
+  // The verification record and the status change are performed by one command.
+  const rpcOp = mockSupabase.operations.find((op) => op.type === 'rpc');
+  assert.ok(rpcOp);
+  assert.equal(rpcOp.fnName, 'verify_report_with_notifications');
+  assert.equal(rpcOp.args.p_is_satisfactory, false);
+  assert.equal(rpcOp.args.p_notes, rejectPayload.notes);
+  assert.ok(rpcOp.args.p_request_id, 'The command must carry an idempotency token');
 });

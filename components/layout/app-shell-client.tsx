@@ -10,12 +10,18 @@ interface AppShellClientProps {
   children: React.ReactNode;
   pageTitle?: string;
   user?: AuthenticatedUser | null;
+  /**
+   * Phase 4C: the genuine unread notification count for the signed-in user, read on the
+   * server. `null` means the count could not be read, and no badge is rendered in that case.
+   */
+  unreadNotificationCount?: number | null;
 }
 
 export function AppShellClient({
   children,
   pageTitle = 'Campus Operations',
   user,
+  unreadNotificationCount = null,
 }: AppShellClientProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -40,6 +46,7 @@ export function AppShellClient({
           title={pageTitle}
           onOpenMobileMenu={handleOpenMobileNav}
           user={user}
+          unreadNotificationCount={unreadNotificationCount}
         />
 
         {/* Content Container */}

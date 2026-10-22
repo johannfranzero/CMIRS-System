@@ -7,6 +7,11 @@ interface StatCardProps {
   icon: React.ReactNode;
   variant?: 'default' | 'amber' | 'blue' | 'emerald' | 'rose';
   urgentAlert?: boolean;
+  /**
+   * Phase 4D.2: when the underlying query failed, the metric is UNKNOWN. Rendering `0`
+   * would present a database failure as a genuine "no records" result.
+   */
+  unavailable?: boolean;
 }
 
 export function StatCard({
@@ -16,6 +21,7 @@ export function StatCard({
   icon,
   variant = 'default',
   urgentAlert = false,
+  unavailable = false,
 }: StatCardProps) {
   const iconTheme = {
     default: 'bg-indigo-50 text-indigo-700 border-indigo-100',
@@ -30,7 +36,9 @@ export function StatCard({
       className={`relative overflow-hidden bg-white rounded-xl border p-5 shadow-xs transition-shadow hover:shadow-sm ${
         urgentAlert
           ? 'border-rose-300 ring-1 ring-rose-300/40'
-          : 'border-slate-200/90'
+          : unavailable
+            ? 'border-amber-200/90'
+            : 'border-slate-200/90'
       }`}
     >
       <div className="flex items-start justify-between">
@@ -39,9 +47,18 @@ export function StatCard({
             {title}
           </p>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-              {value}
-            </span>
+            {unavailable ? (
+              <span
+                className="text-lg sm:text-xl font-bold tracking-tight text-amber-700"
+                title="Metric unavailable: the database query failed"
+              >
+                Unavailable
+              </span>
+            ) : (
+              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+                {value}
+              </span>
+            )}
             {urgentAlert && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-800">
                 Action required

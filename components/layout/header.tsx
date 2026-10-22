@@ -12,16 +12,24 @@ interface HeaderProps {
   onOpenMobileMenu: () => void;
   title?: string;
   user?: AuthenticatedUser | null;
+  /**
+   * Phase 4C: the genuine unread notification count for the signed-in user, derived
+   * server-side from that user's own unread rows. `null` means the count could not be read.
+   */
+  unreadNotificationCount?: number | null;
 }
 
 export function Header({
   onOpenMobileMenu,
   title = 'Campus Operations',
   user,
+  unreadNotificationCount = null,
 }: HeaderProps) {
   const initials = getInitials(user?.profile?.full_name, user?.email);
   const displayName = getUserDisplayName(user?.profile, user?.email);
   const roleTitle = getUserRoleTitle(user?.profile?.role);
+  // `null` means the unread count could not be read; no badge is rendered in that case.
+  const unreadCount = unreadNotificationCount ?? 0;
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200/90 px-4 sm:px-6 flex items-center justify-between gap-4 shrink-0">
@@ -64,16 +72,30 @@ export function Header({
           </Button>
         </Link>
 
-        {/* Notifications Icon Placeholder */}
-        <button
-          type="button"
+        {/* Notifications control.
+            Phase 4D.1 removed the decorative red "unread" dot because it implied a live
+            notification count that no backend provided.
+            Phase 4C: the backend now persists real notifications, so the badge shows the
+            genuine unread count that the server derived from the recipient's own unread rows.
+            When the count could not be read, no badge is rendered at all rather than a
+            fabricated zero. */}
+        <Link
+          href="/notifications"
           className="relative p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-colors"
-          aria-label="View notifications"
+          aria-label={
+            unreadCount > 0
+              ? `Notifications (${unreadNotificationCount} unread)`
+              : 'Notifications'
+          }
           title="Campus Notifications"
         >
           <BellIcon size={20} className="w-5 h-5 shrink-0" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" />
-        </button>
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </Link>
 
         {/* Separator */}
         <div className="h-6 w-px bg-slate-200 hidden sm:block" />
