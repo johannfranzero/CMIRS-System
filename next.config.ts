@@ -105,16 +105,9 @@ const nextConfig: NextConfig = {
     // rather than a clean rejection. This must be at least as large as
     // `serverActions.bodySizeLimit` and larger than the 10 MB per-attachment cap.
     proxyClientMaxBodySize: '12mb',
-  },  cacheComponents: true,
-  partialPrefetching: true,
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
   },
+  cacheComponents: true,
+  partialPrefetching: true,
 };
 
 export default nextConfig;

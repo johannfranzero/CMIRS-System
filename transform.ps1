@@ -23,12 +23,16 @@ foreach ($l in $lines) {
         continue
     }
     if ($l -match 'PERFORM v_act_as\(') {
-        $out.Add([regex]::Replace($l, 'PERFORM v_act_as\(([^)]*)\)', "PERFORM set_config('request.jwt.claims', json_build_object('sub', $1, 'role', 'authenticated')::text, true);"))
+        $m = [regex]::Match($l, 'PERFORM v_act_as\(([^)]*)\)')
+        $arg = $m.Groups[1].Value
+        $out.Add("PERFORM set_config('request.jwt.claims', json_build_object('sub', $arg, 'role', 'authenticated')::text, true);")
         continue
     }
     $out.Add($l)
 }
 [IO.File]::WriteAllLines($p, $out)
 $t = [IO.File]::ReadAllText($p)
-$n1 = [regex]::Matches($t, 'v_act_as|v_try|pg_temp').Count
+$n1 = [regex]::Matches($t, 'v_act_as|v_try|pg_temp|json_build_object\(\'sub\',\s*,').Count
 Write-Output ("remaining helper refs: " + $n1)
+$bad = [regex]::Matches($t, "json_build_object\('sub',\s*,")
+Write-Output ("empty sub args: " + $bad.Count)
