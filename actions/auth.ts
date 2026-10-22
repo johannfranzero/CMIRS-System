@@ -107,13 +107,39 @@ export async function loginAction(
 /**
  * Server Action: Terminates the current Supabase session, clears cookies,
  * and redirects the user to the login screen with a logged_out notice.
+ *
+ * Cookie clearing is performed twice for resilience:
+ * 1. `supabase.auth.signOut()` triggers the SSR client's `setAll` callback.
+ * 2. An explicit sweep deletes every `sb-*` cookie, ensuring the session is
+ *    fully cleared even when the Supabase Auth server is unreachable or
+ *    `signOut()` throws.
+ *
+ * Without the explicit sweep, a failed `signOut()` leaves valid JWTs in the
+ * cookies. The proxy then sees an authenticated user on `/login` and
+ * redirects them back to `/`, creating an inescapable redirect loop.
  */
 export async function logoutAction(): Promise<void> {
+  const { cookies } = await import('next/headers');
+  const cookieStore = await cookies();
+
   try {
     const supabase = await createClient();
     await supabase.auth.signOut();
   } catch (error) {
     console.error('Sign out error:', error);
+  }
+
+  // Safety net: explicitly delete every Supabase auth cookie so the proxy
+  // never sees a stale session on the subsequent `/login` redirect.
+  try {
+    const allCookies = cookieStore.getAll();
+    for (const cookie of allCookies) {
+      if (cookie.name.startsWith('sb-')) {
+        cookieStore.delete(cookie.name);
+      }
+    }
+  } catch (error) {
+    console.error('Cookie cleanup error:', error);
   }
 
   redirect('/login?reason=logged_out');

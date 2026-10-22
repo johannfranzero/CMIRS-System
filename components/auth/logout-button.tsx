@@ -19,7 +19,20 @@ export function LogoutButton({
 
   const handleLogout = () => {
     startTransition(async () => {
-      await logoutAction();
+      try {
+        await logoutAction();
+      } catch {
+        // Server action failed (server crash, network error, etc.).
+        // Fall back to client-side sign-out + hard redirect.
+        try {
+          const { createClient } = await import('@/utils/supabase/client');
+          const supabase = createClient();
+          await supabase.auth.signOut();
+        } catch {
+          // Best-effort — cookie clearing may still happen via the redirect.
+        }
+        window.location.href = '/login?reason=logged_out';
+      }
     });
   };
 

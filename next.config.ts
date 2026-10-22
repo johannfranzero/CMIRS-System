@@ -40,6 +40,8 @@ const connectSources = ["'self'", supabaseOrigin, supabaseWsOrigin]
   .filter((value) => value.length > 0)
   .join(" ");
 
+const isDev = process.env.NODE_ENV !== "production";
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -51,7 +53,9 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   // Next.js emits an inline bootstrap script for hydration. `'unsafe-inline'` is required
   // until the nonce-based policy described above is implemented.
-  "script-src 'self' 'unsafe-inline'",
+  // In development, React and Next.js require `'unsafe-eval'` for callstack reconstruction,
+  // source maps, and Fast Refresh overlays.
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "object-src 'none'",
   "media-src 'self' blob:",
   "worker-src 'self' blob:",
